@@ -53,7 +53,7 @@ export default async function AdminDashboardPage() {
               Dashboard SIMATA Terpadu
             </h1>
             <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
-              Selamat datang di sistem manajemen arsip MI Bustanul Huda. Seluruh data tersimpan otomatis di database Supabase PostgreSQL dan terorganisir per rombel kelas di Google Drive cloud.
+              Selamat datang di sistem manajemen arsip MI Bustanul Huda Dawuhan. Seluruh data tersimpan otomatis di database Supabase PostgreSQL dan terorganisir per rombel kelas di Google Drive cloud.
             </p>
           </div>
 

@@ -129,13 +129,13 @@ export function PublicUploadPortal({
   madrasahs?: MadrasahItem[];
 }) {
   const defaultMadrasahs: MadrasahItem[] = [
-    { id: "mi01", name: "MI Bustanul Huda 01", code: "MI 01", isActive: true },
-    { id: "mi02", name: "MI Bustanul Huda 02", code: "MI 02", isActive: true },
+    { id: "mi01", name: "MI Bustanul Huda 01 Dawuhan", code: "MI 01", isActive: true },
+    { id: "mi02", name: "MI Bustanul Huda 02 Dawuhan", code: "MI 02", isActive: true },
   ];
 
   const availableMadrasahs = madrasahs && madrasahs.length > 0 ? madrasahs : defaultMadrasahs;
   const [selectedMadrasah, setSelectedMadrasah] = useState<string>(
-    availableMadrasahs[0]?.name || "MI Bustanul Huda 01"
+    availableMadrasahs[0]?.name || "MI Bustanul Huda 01 Dawuhan"
   );
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(
@@ -661,7 +661,7 @@ export function PublicUploadPortal({
     setSubmitterContact("");
     setNotes("");
     setUploadProgress(0);
-    setSelectedMadrasah(availableMadrasahs[0]?.name || "MI Bustanul Huda 01");
+    setSelectedMadrasah(availableMadrasahs[0]?.name || "MI Bustanul Huda 01 Dawuhan");
     setDuplicateInfo(null);
     setAllowSupplementary(false);
   };
@@ -709,7 +709,7 @@ export function PublicUploadPortal({
                 </span>
               </div>
               <span className="text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5 block truncate max-w-[150px] xs:max-w-[220px] sm:max-w-none">
-                MI Bustanul Huda
+                MI Bustanul Huda Dawuhan
               </span>
             </div>
           </div>
@@ -1669,7 +1669,7 @@ export function PublicUploadPortal({
                       )}
                     </Button>
                     <p className="text-center text-[10px] sm:text-[11px] text-muted-foreground mt-2">
-                      Dengan mengirimkan berkas, arsip dokumentasi akan langsung tersimpan di cloud storage resmi MI Bustanul Huda.
+                      Dengan mengirimkan berkas, arsip dokumentasi akan langsung tersimpan di cloud storage resmi MI Bustanul Huda Dawuhan.
                     </p>
                   </div>
                 </CardContent>
@@ -1687,7 +1687,7 @@ export function PublicUploadPortal({
               M
             </div>
             <span className="font-semibold text-slate-700 dark:text-slate-300 text-center sm:text-left text-[11px] sm:text-xs">
-              SIMATA • Madrasah Ibtidaiyah Bustanul Huda
+              SIMATA • Madrasah Ibtidaiyah Bustanul Huda Dawuhan
             </span>
           </div>
 

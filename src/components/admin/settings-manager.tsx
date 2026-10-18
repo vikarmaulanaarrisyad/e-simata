@@ -453,7 +453,7 @@ export function SettingsManager({ initialStatus, initialMadrasahs = [] }: Settin
                   Koneksi Google Drive Belum Aktif
                 </h4>
                 <p className="text-xs text-amber-800/80 dark:text-amber-300/80 max-w-xl">
-                  Hubungkan akun Google Drive resmi MI Bustanul Huda dalam satu klik melalui Google OAuth 2.0. Berkas yang diunggah akan otomatis langsung mengalir ke Google Drive.
+                  Hubungkan akun Google Drive resmi MI Bustanul Huda Dawuhan dalam satu klik melalui Google OAuth 2.0. Berkas yang diunggah akan otomatis langsung mengalir ke Google Drive.
                 </p>
               </div>
 

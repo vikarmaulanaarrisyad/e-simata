@@ -64,7 +64,7 @@ export function AdminLoginView() {
         closeSwal();
         showSwalSuccess({
           title: "Login Berhasil! 🎉",
-          message: "Selamat datang kembali di Panel Administrasi SIMATA MI Bustanul Huda.",
+          message: "Selamat datang kembali di Panel Administrasi SIMATA MI Bustanul Huda Dawuhan.",
           onUploadAgain: () => router.push("/admin"),
         });
 

@@ -214,7 +214,7 @@ export function PwaInstaller() {
             Pasang Aplikasi SIMATA
           </h3>
           <p className="text-[11px] text-emerald-100/90 mt-0.5 font-medium">
-            MI Bustanul Huda
+            MI Bustanul Huda Dawuhan
           </p>
         </div>
 

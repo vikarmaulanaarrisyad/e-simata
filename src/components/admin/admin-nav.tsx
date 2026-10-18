@@ -121,7 +121,7 @@ export function AdminSidebar({ driveStatus }: { driveStatus: DriveStatus }) {
                 </span>
               </div>
               <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate mt-1">
-                MI Bustanul Huda
+                MI Bustanul Huda Dawuhan
               </p>
             </div>
           </Link>
@@ -376,7 +376,7 @@ export function AdminHeader({ driveStatus }: { driveStatus: DriveStatus }) {
             <span>Portal Admin</span>
             <ChevronRight className="h-3 w-3" />
             <span className="text-slate-600 dark:text-slate-300 font-medium">
-              MI Bustanul Huda
+              MI Bustanul Huda Dawuhan
             </span>
           </div>
         </div>

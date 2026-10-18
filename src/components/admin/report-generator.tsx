@@ -688,7 +688,7 @@ export function ReportGenerator({
               {/* Footer Catatan Sistem */}
               <div className="mt-8 pt-2 border-t border-slate-300 text-[9px] text-slate-500 flex justify-between items-center">
                 <span>
-                  Dokumen ini dicetak otomatis melalui SIMATA (Sistem Informasi Madrasah Digital) MI Bustanul Huda.
+                  Dokumen ini dicetak otomatis melalui SIMATA (Sistem Informasi Madrasah Digital) MI Bustanul Huda Dawuhan.
                 </span>
                 <span>Ukuran Kertas: F4 (215 × 330 mm) • Margin: 20 mm</span>
               </div>
