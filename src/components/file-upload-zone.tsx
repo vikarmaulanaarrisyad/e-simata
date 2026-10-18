@@ -15,12 +15,15 @@ import {
 import { formatBytes } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { compressImageFile } from "@/lib/image-compression";
 
 export interface SelectedFileItem {
   file: File;
   id: string;
   previewUrl?: string;
   type: "IMAGE" | "VIDEO" | "OTHER";
+  isCompressed?: boolean;
+  originalSize?: number;
 }
 
 interface FileUploadZoneProps {
@@ -77,53 +80,72 @@ export function FileUploadZone({
       : `Format didukung: JPG, PNG, WEBP, MP4, MOV (Maks. ${maxFileSizeMb} MB per berkas)`);
 
   const processSelectedFiles = useCallback(
-    (newFileList: FileList | File[]) => {
+    async (newFileList: FileList | File[]) => {
       setErrorMsg(null);
       const incoming = Array.from(newFileList);
       const updatedFiles: SelectedFileItem[] = [...files];
 
-      for (const file of incoming) {
-        // Validate size
-        const fileSizeMb = file.size / (1024 * 1024);
-        if (fileSizeMb > maxFileSizeMb) {
-          setErrorMsg(
-            `Berkas "${file.name}" melebihi batas ukuran maksimal (${maxFileSizeMb} MB).`
-          );
-          continue;
-        }
-
+      for (const rawFile of incoming) {
         // Validate type
-        const isImage = file.type.startsWith("image/");
-        const isVideo = file.type.startsWith("video/");
+        const isImage = rawFile.type.startsWith("image/");
+        const isVideo = rawFile.type.startsWith("video/");
 
         if (targetType === "IMAGE" && !isImage) {
           setErrorMsg(
-            `Berkas "${file.name}" bukan foto/gambar. Mohon gunakan kolom Upload Video untuk berkas rekaman video.`
+            `Berkas "${rawFile.name}" bukan foto/gambar. Mohon gunakan kolom Upload Video untuk berkas rekaman video.`
           );
           continue;
         }
 
         if (targetType === "VIDEO" && !isVideo) {
           setErrorMsg(
-            `Berkas "${file.name}" bukan video. Mohon gunakan kolom Upload Foto untuk berkas foto/gambar.`
+            `Berkas "${rawFile.name}" bukan video. Mohon gunakan kolom Upload Foto untuk berkas foto/gambar.`
           );
           continue;
         }
 
         if (targetType === "ALL" && !isImage && !isVideo) {
           setErrorMsg(
-            `Berkas "${file.name}" bukan format foto atau video yang didukung.`
+            `Berkas "${rawFile.name}" bukan format foto atau video yang didukung.`
+          );
+          continue;
+        }
+
+        let fileToUse = rawFile;
+        let isCompressed = false;
+        const originalSize = rawFile.size;
+
+        // Otomatis kompresi foto kamera HP berukuran besar (> 500 KB) agar transmisi cepat & hemat kuota
+        if (isImage && rawFile.size > 500 * 1024) {
+          try {
+            const compressed = await compressImageFile(rawFile);
+            if (compressed.size < rawFile.size) {
+              fileToUse = compressed;
+              isCompressed = true;
+            }
+          } catch {
+            fileToUse = rawFile;
+          }
+        }
+
+        // Validate size after compression
+        const fileSizeMb = fileToUse.size / (1024 * 1024);
+        if (fileSizeMb > maxFileSizeMb) {
+          setErrorMsg(
+            `Berkas "${fileToUse.name}" melebihi batas ukuran maksimal (${maxFileSizeMb} MB).`
           );
           continue;
         }
 
         // Create preview
-        const previewUrl = URL.createObjectURL(file);
+        const previewUrl = URL.createObjectURL(fileToUse);
         updatedFiles.push({
-          file,
-          id: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`,
+          file: fileToUse,
+          id: `${fileToUse.name}-${fileToUse.size}-${Date.now()}-${Math.random()}`,
           previewUrl,
           type: isImage ? "IMAGE" : "VIDEO",
+          isCompressed,
+          originalSize,
         });
       }
 
@@ -344,9 +366,16 @@ export function FileUploadZone({
                   <p className="truncate text-xs font-bold text-slate-800 dark:text-slate-100">
                     {item.file.name}
                   </p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {formatBytes(item.file.size)} • {item.type}
-                  </p>
+                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      {formatBytes(item.file.size)} • {item.type}
+                    </span>
+                    {item.isCompressed && item.originalSize && item.originalSize > item.file.size && (
+                      <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-300/60 dark:border-emerald-800">
+                        Hemat {Math.round((1 - item.file.size / item.originalSize) * 100)}%
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Remove button */}

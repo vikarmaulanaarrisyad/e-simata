@@ -43,6 +43,7 @@ import { toast } from "sonner";
 import { generatePedagogicalNote } from "@/lib/ai-generator";
 import { checkDuplicateSubmission } from "@/actions/submissions";
 import { HeaderInstallButton } from "@/components/pwa-installer";
+import { compressImageFile } from "@/lib/image-compression";
 import {
   showSwalSuccess,
   showSwalWarning,
@@ -540,7 +541,45 @@ export function PublicUploadPortal({
       return;
     }
 
-    // 3. Prepare FormData
+    // 3. Start SweetAlert Loading & State
+    setIsUploading(true);
+    setUploadProgress(10);
+
+    showSwalLoading({
+      title: "Menyiapkan Berkas...",
+      stepText: "1/3 Mengoptimalkan resolusi foto agar transmisi cepat & hemat kuota...",
+      progressPercent: 15,
+    });
+
+    // Otomatis kompresi foto kamera HP beresolusi tinggi sebelum pengiriman
+    const readyFiles: File[] = [];
+    for (const item of selectedFiles) {
+      if (item.type === "IMAGE" && item.file.size > 500 * 1024) {
+        try {
+          const compressed = await compressImageFile(item.file);
+          readyFiles.push(compressed);
+        } catch {
+          readyFiles.push(item.file);
+        }
+      } else {
+        readyFiles.push(item.file);
+      }
+    }
+
+    // Periksa total ukuran transmisi (Batas aman Serverless Vercel: 4.2 MB)
+    const totalPayloadBytes = readyFiles.reduce((acc, f) => acc + f.size, 0);
+    if (totalPayloadBytes > 4.2 * 1024 * 1024) {
+      setIsUploading(false);
+      setUploadProgress(0);
+      closeSwal();
+      showSwalWarning(
+        "Ukuran Berkas Melebihi Batas Transmisi",
+        `Total ukuran berkas (<b>${formatBytes(totalPayloadBytes)}</b>) melebihi batas pengiriman server cloud (maksimal 4.2 MB per pengiriman).<br><br><b>Saran Solusi:</b><br>• Jika ada video, perpendek durasi video atau turunkan resolusinya.<br>• Atau kirim berkas foto terlebih dahulu, lalu kirim video berikutnya sebagai <b>Berkas Susulan</b>.`
+      );
+      return;
+    }
+
+    // 4. Prepare FormData
     const formData = new FormData();
     formData.append("categoryId", selectedCategory.id);
     formData.append("madrasah", selectedMadrasah);
@@ -554,25 +593,18 @@ export function PublicUploadPortal({
       formData.append("replaceSubmissionId", duplicateInfo.existingSubmission.id);
     }
 
-    for (const item of selectedFiles) {
-      formData.append("files", item.file);
+    for (const file of readyFiles) {
+      formData.append("files", file);
     }
 
-    // 4. Start SweetAlert Loading & State
-    setIsUploading(true);
-    setUploadProgress(15);
-
-    showSwalLoading({
-      title: "Mengunggah Berkas ke Google Drive...",
-      stepText: "1/3 Menyiapkan berkas dan mengamankan koneksi cloud...",
-      progressPercent: 25,
-    });
+    updateSwalLoading("2/3 Menghubungkan ke Google Drive Cloud & membuat folder rombel...", 35);
+    setUploadProgress(35);
 
     const progressTimer = setInterval(() => {
       setUploadProgress((prev) => {
         if (prev >= 85) return prev;
-        const next = prev + 15;
-        if (next >= 45 && next < 75) {
+        const next = prev + 10;
+        if (next >= 50 && next < 75) {
           updateSwalLoading("2/3 Membuat struktur subfolder per rombel kelas...", next);
         } else if (next >= 75) {
           updateSwalLoading("3/3 Menyimpan dan mengamankan arsip madrasah...", next);
@@ -587,10 +619,18 @@ export function PublicUploadPortal({
         body: formData,
       });
 
-      const result = await response.json();
+      // Parse teks terlebih dahulu agar tidak crash jika Vercel mengembalikan halaman HTML (misal error 413/504)
+      const responseText = await response.text();
+      let result: any = null;
+      try {
+        result = JSON.parse(responseText);
+      } catch {
+        result = null;
+      }
+
       clearInterval(progressTimer);
 
-      if (response.ok && result.success) {
+      if (response.ok && result?.success) {
         setUploadProgress(100);
         updateSwalLoading("Unggahan selesai! Menyiapkan tanda terima...", 100);
 
@@ -629,20 +669,44 @@ export function PublicUploadPortal({
         setIsUploading(false);
         setUploadProgress(0);
         closeSwal();
-        showSwalError(
-          "Gagal Mengunggah Berkas",
-          result.error || "Terjadi kesalahan saat memproses berkas ke Google Drive. Silakan coba kembali."
-        );
+
+        let errorTitle = "Gagal Mengunggah Berkas";
+        let errorMsg = result?.error;
+
+        if (!errorMsg) {
+          if (response.status === 413 || responseText.includes("PAYLOAD_TOO_LARGE")) {
+            errorTitle = "Ukuran Berkas Melebihi Batas Server";
+            errorMsg = "Kapasitas berkas terlalu besar untuk dikirim sekaligus. Mohon kurangi ukuran video atau kirim berkas foto terlebih dahulu.";
+          } else if (response.status === 504 || response.status === 502) {
+            errorTitle = "Waktu Proses Server Habis";
+            errorMsg = "Server Google Drive membutuhkan waktu lebih lama untuk memproses. Isian formulir Anda tetap tersimpan aman di HP ini. Silakan tekan tombol kirim sekali lagi.";
+          } else {
+            errorMsg = `Server merespons status ${response.status} (${response.statusText || "Internal Server Error"}). Silakan coba beberapa saat lagi.`;
+          }
+        }
+
+        showSwalError(errorTitle, errorMsg);
       }
     } catch (err: any) {
       clearInterval(progressTimer);
       setIsUploading(false);
       setUploadProgress(0);
       closeSwal();
-      showSwalError(
-        "Koneksi Terputus",
-        "Terjadi kegagalan jaringan saat mengirim berkas. Mohon periksa koneksi internet Anda."
-      );
+
+      const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+      const errorDetail = err?.message ? ` (${err.message})` : "";
+
+      if (isOffline) {
+        showSwalError(
+          "Koneksi Internet Terputus",
+          "Perangkat Anda sedang offline. Draf isian formulir tetap tersimpan aman di HP. Sambungkan internet Anda kembali lalu tekan 'Unggah & Simpan'."
+        );
+      } else {
+        showSwalError(
+          "Transmisi Berkas Terkendala",
+          `Gagal mengirimkan berkas ke cloud server${errorDetail}. Draf isian formulir Anda tetap aman di HP ini. Mohon periksa stabilitas jaringan internet Anda lalu tekan kirim ulang.`
+        );
+      }
     }
   };
 
