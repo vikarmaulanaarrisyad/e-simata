@@ -244,10 +244,11 @@ export function sanitizeFileName(params: {
   madrasahName?: string | null;
   className?: string | null;
   submitterName?: string | null;
+  activityDate?: string | Date | null;
   index?: number;
   totalFiles?: number;
 }): string {
-  const { originalName, categoryName, madrasahName, className, submitterName, index = 0, totalFiles = 1 } = params;
+  const { originalName, categoryName, madrasahName, className, submitterName, activityDate, index = 0, totalFiles = 1 } = params;
 
   // 1. Ekstrak ekstensi berkas
   const lastDot = originalName.lastIndexOf(".");
@@ -276,11 +277,41 @@ export function sanitizeFileName(params: {
     ? `_${className.replace(/[^a-zA-Z0-9]/g, "").slice(0, 15)}`
     : "";
 
-  // 4. Tanggal format YYYYMMDD
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
+  // 4. Tanggal format YYYYMMDD (mengikuti tanggal yang dipilih guru jika ada)
+  let yyyy: number;
+  let mm: string;
+  let dd: string;
+
+  if (activityDate) {
+    if (typeof activityDate === "string") {
+      const parts = activityDate.split("-");
+      if (parts.length === 3 && parts[0].length === 4) {
+        yyyy = parseInt(parts[0], 10);
+        mm = parts[1].padStart(2, "0");
+        dd = parts[2].padStart(2, "0");
+      } else {
+        const d = new Date(activityDate);
+        yyyy = !isNaN(d.getTime()) ? d.getFullYear() : new Date().getFullYear();
+        mm = !isNaN(d.getTime()) ? String(d.getMonth() + 1).padStart(2, "0") : String(new Date().getMonth() + 1).padStart(2, "0");
+        dd = !isNaN(d.getTime()) ? String(d.getDate()).padStart(2, "0") : String(new Date().getDate()).padStart(2, "0");
+      }
+    } else if (activityDate instanceof Date && !isNaN(activityDate.getTime())) {
+      yyyy = activityDate.getFullYear();
+      mm = String(activityDate.getMonth() + 1).padStart(2, "0");
+      dd = String(activityDate.getDate()).padStart(2, "0");
+    } else {
+      const now = new Date();
+      yyyy = now.getFullYear();
+      mm = String(now.getMonth() + 1).padStart(2, "0");
+      dd = String(now.getDate()).padStart(2, "0");
+    }
+  } else {
+    const now = new Date();
+    yyyy = now.getFullYear();
+    mm = String(now.getMonth() + 1).padStart(2, "0");
+    dd = String(now.getDate()).padStart(2, "0");
+  }
+
   const dateStr = `${yyyy}${mm}${dd}`;
 
   // 5. Bersihkan nama wali kelas / pengirim (hanya alphanumeric, max 20 karakter)
@@ -415,6 +446,7 @@ export async function setupSubmissionFolder(params: {
   madrasahName?: string | null;
   className?: string | null;
   submitterName?: string | null;
+  activityDate?: string | Date | null;
   baseFolderId?: string | null;
 }): Promise<{
   rootFolderId: string;
@@ -427,7 +459,7 @@ export async function setupSubmissionFolder(params: {
   submissionFolderUrl: string;
   isMock: boolean;
 }> {
-  const { categoryName, madrasahName, className, submitterName, baseFolderId } = params;
+  const { categoryName, madrasahName, className, submitterName, activityDate, baseFolderId } = params;
 
   // 1. Root Utama: Folder "SIMATA"
   const rootFolder = await getOrCreateDriveFolder({
@@ -453,7 +485,7 @@ export async function setupSubmissionFolder(params: {
   });
 
   // 4. Subfolder Level 3: [Tanggal] Format Indonesia (misal: "19 Oktober 2026")
-  const now = new Date();
+  // Mengikuti tanggal yang dipilih guru!
   const MONTHS_ID = [
     "Januari",
     "Februari",
@@ -468,7 +500,35 @@ export async function setupSubmissionFolder(params: {
     "November",
     "Desember",
   ];
-  const dateFolderName = `${now.getDate()} ${MONTHS_ID[now.getMonth()]} ${now.getFullYear()}`;
+
+  let dateFolderName = "";
+  if (activityDate) {
+    if (typeof activityDate === "string") {
+      const parts = activityDate.split("-");
+      if (parts.length === 3 && parts[0].length === 4) {
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const d = parseInt(parts[2], 10);
+        if (!isNaN(y) && !isNaN(m) && !isNaN(d) && m >= 0 && m < 12) {
+          dateFolderName = `${d} ${MONTHS_ID[m]} ${y}`;
+        }
+      } else {
+        const parsed = new Date(activityDate);
+        if (!isNaN(parsed.getTime())) {
+          dateFolderName = `${parsed.getDate()} ${MONTHS_ID[parsed.getMonth()]} ${parsed.getFullYear()}`;
+        }
+      }
+    } else if (activityDate instanceof Date && !isNaN(activityDate.getTime())) {
+      dateFolderName = `${activityDate.getDate()} ${MONTHS_ID[activityDate.getMonth()]} ${activityDate.getFullYear()}`;
+    }
+  }
+
+  // Fallback ke tanggal hari ini jika kosong
+  if (!dateFolderName) {
+    const now = new Date();
+    dateFolderName = `${now.getDate()} ${MONTHS_ID[now.getMonth()]} ${now.getFullYear()}`;
+  }
+
   const dateFolder = await getOrCreateDriveFolder({
     folderName: dateFolderName,
     parentFolderId: categoryFolder.id,
@@ -499,3 +559,75 @@ export async function setupSubmissionFolder(params: {
     isMock: classFolder.isMock,
   };
 }
+
+/**
+ * Menghapus satu berkas dari Google Drive secara permanen
+ */
+export async function deleteFileFromDrive(fileId: string): Promise<{
+  success: boolean;
+  isMock: boolean;
+  error?: string;
+}> {
+  if (!fileId || fileId.trim() === "") {
+    return { success: false, isMock: false, error: "File ID kosong." };
+  }
+
+  // Jika fileId adalah ID mock simulasi
+  if (fileId.startsWith("mock_")) {
+    console.log(`[Google Drive Mock] Menghapus file mock "${fileId}".`);
+    return { success: true, isMock: true };
+  }
+
+  const { drive, isMock } = await getGoogleDriveClientAsync();
+
+  if (isMock || !drive) {
+    console.log(`[Google Drive Mock] Berkas "${fileId}" disimulasikan terhapus.`);
+    return { success: true, isMock: true };
+  }
+
+  try {
+    await drive.files.delete({
+      fileId: fileId.trim(),
+      supportsAllDrives: true,
+    });
+    console.log(`[Google Drive Success] Berkas "${fileId}" berhasil dihapus dari Google Drive.`);
+    return { success: true, isMock: false };
+  } catch (err: any) {
+    // Jika file sudah dihapus di Google Drive (404), anggap sukses agar alur sistem tidak terhambat
+    if (err?.code === 404 || err?.status === 404 || err?.message?.includes("File not found")) {
+      console.warn(`[Google Drive Info] Berkas "${fileId}" sudah tidak ada di Drive (404), dilewati.`);
+      return { success: true, isMock: false };
+    }
+    console.error(`[Google Drive Delete Error] Gagal menghapus berkas "${fileId}":`, err);
+    return { success: false, isMock: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Menghapus kumpulan berkas sekaligus dari Google Drive
+ */
+export async function deleteMultipleFilesFromDrive(fileIds: string[]): Promise<{
+  deletedCount: number;
+  failedCount: number;
+}> {
+  let deletedCount = 0;
+  let failedCount = 0;
+
+  for (const id of fileIds) {
+    if (!id || id.trim() === "") continue;
+    try {
+      const res = await deleteFileFromDrive(id);
+      if (res.success) {
+        deletedCount++;
+      } else {
+        failedCount++;
+      }
+    } catch (err) {
+      console.error(`[deleteMultipleFilesFromDrive error for ${id}]`, err);
+      failedCount++;
+    }
+  }
+
+  return { deletedCount, failedCount };
+}
+

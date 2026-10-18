@@ -189,7 +189,15 @@ export function PublicUploadPortal({
   // Common submitter fields
   const [submitterName, setSubmitterName] = useState("");
   const [submitterContact, setSubmitterContact] = useState("");
+  const [activityDate, setActivityDate] = useState(() => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  });
   const [notes, setNotes] = useState("");
+  const [notesSeed, setNotesSeed] = useState(0);
 
   // Dynamic field responses
   const [fieldAnswers, setFieldAnswers] = useState<Record<string, any>>({});
@@ -235,6 +243,7 @@ export function PublicUploadPortal({
     };
   } | null>(null);
   const [allowSupplementary, setAllowSupplementary] = useState(false);
+  const [replacePrevious, setReplacePrevious] = useState(false);
   const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
 
   const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
@@ -393,11 +402,11 @@ export function PublicUploadPortal({
     }
 
     // 1b. Pengecekan Data Ganda (Cegah pengiriman berulang pada hari/tanggal yang sama)
-    if (duplicateInfo?.isDuplicate && !allowSupplementary && duplicateInfo.existingSubmission) {
+    if (duplicateInfo?.isDuplicate && !allowSupplementary && !replacePrevious && duplicateInfo.existingSubmission) {
       const ex = duplicateInfo.existingSubmission;
       showSwalWarning(
         "Pengisian Sudah Selesai Hari Ini",
-        `Rombel <b>${ex.kelas}</b> di <b>${ex.madrasah}</b> sudah terekam mengisi <b>${ex.categoryName}</b> hari ini pukul <b>${ex.timeFormatted}</b> oleh <b>${ex.submitterName}</b>.<br><br>Untuk menjaga kerapian Google Drive dan mencegah data ganda, pengiriman ditahan.<br><br><i>Jika Anda bermaksud menambah berkas yang belum terunggah, silakan centang opsi <b>"Izinkan kirim sebagai berkas susulan"</b> pada formulir.</i>`
+        `Rombel <b>${ex.kelas}</b> di <b>${ex.madrasah}</b> sudah terekam mengisi <b>${ex.categoryName}</b> hari ini pukul <b>${ex.timeFormatted}</b> oleh <b>${ex.submitterName}</b>.<br><br>Untuk menjaga kerapian Google Drive dan mencegah data ganda, pengiriman ditahan.<br><br><i>Silakan pilih opsi <b>"Perbarui & Ganti berkas sebelumnya"</b> (file lama di Google Drive akan dihapus dan diganti yang baru) atau <b>"Kirim sebagai berkas susulan"</b> pada kotak kuning di formulir.</i>`
       );
       return;
     }
@@ -415,11 +424,15 @@ export function PublicUploadPortal({
     const formData = new FormData();
     formData.append("categoryId", selectedCategory.id);
     formData.append("madrasah", selectedMadrasah);
+    formData.append("activityDate", activityDate);
     if (submitterName.trim()) formData.append("submitterName", submitterName.trim());
     if (submitterContact.trim()) formData.append("submitterContact", submitterContact.trim());
     if (notes.trim()) formData.append("notes", notes.trim());
     formData.append("fieldsData", JSON.stringify(fieldAnswers));
     if (allowSupplementary) formData.append("allowSupplementary", "true");
+    if (replacePrevious && duplicateInfo?.existingSubmission) {
+      formData.append("replaceSubmissionId", duplicateInfo.existingSubmission.id);
+    }
 
     for (const item of selectedFiles) {
       formData.append("files", item.file);
@@ -538,7 +551,7 @@ export function PublicUploadPortal({
       {/* Top Navbar */}
       <header className="sticky top-0 z-40 w-full border-b border-emerald-100/80 bg-white/85 backdrop-blur-md dark:border-emerald-950/60 dark:bg-slate-900/85 transition-all">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-18 flex items-center justify-between">
-          <div className="flex items-center gap-3.5">
+          <div className="flex items-center gap-3.5 py-3">
             <div className="h-11 w-11 rounded-2xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-600/20 ring-2 ring-emerald-400/20">
               <ShieldCheck className="h-6 w-6" />
             </div>
@@ -565,16 +578,16 @@ export function PublicUploadPortal({
 
             <HeaderInstallButton />
 
-            <Link href="/admin/login">
+            {/* <Link href="/admin/login">
               <Button
                 variant="outline"
                 size="sm"
                 className="gap-2 text-xs font-bold rounded-xl border-emerald-200 hover:bg-emerald-50 dark:border-emerald-800 hover:border-emerald-400 transition-all shadow-xs cursor-pointer"
               >
                 <Lock className="h-3.5 w-3.5 text-emerald-600" />
-                <span>Login Admin</span>
+                <span>Admin</span>
               </Button>
-            </Link>
+            </Link> */}
           </div>
         </div>
       </header>
@@ -1056,7 +1069,7 @@ export function PublicUploadPortal({
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div className="space-y-1.5">
                         <Label htmlFor="submitter-name" className="text-xs font-bold text-slate-800 dark:text-slate-200">
                           Nama Lengkap Wali Kelas <span className="text-red-500">*</span>
@@ -1084,6 +1097,42 @@ export function PublicUploadPortal({
                           className="bg-white dark:bg-slate-900 border-emerald-200/80 focus-visible:ring-emerald-500 h-10 text-sm font-medium"
                         />
                       </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="activity-date" className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                          <Calendar className="h-3.5 w-3.5 text-emerald-600" />
+                          <span>Tanggal Kegiatan</span>
+                          <span className="text-red-500">*</span>
+                        </Label>
+                        <Input
+                          id="activity-date"
+                          type="date"
+                          value={activityDate}
+                          onChange={(e) => setActivityDate(e.target.value)}
+                          disabled={isUploading}
+                          className="bg-white dark:bg-slate-900 border-emerald-200/80 focus-visible:ring-emerald-500 h-10 text-sm font-semibold cursor-pointer"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Live Preview Folder Tanggal Google Drive */}
+                    <div className="p-3 rounded-xl bg-white/90 dark:bg-slate-900/90 border border-emerald-200/80 dark:border-emerald-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs text-emerald-900 dark:text-emerald-200 shadow-xs">
+                      <span className="font-semibold flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        📁 Penamaan Subfolder Tanggal di Google Drive:
+                      </span>
+                      <strong className="font-extrabold text-emerald-800 dark:text-emerald-300 text-xs font-mono">
+                        {(() => {
+                          const parts = activityDate.split("-");
+                          if (parts.length === 3) {
+                            const months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+                            const d = parseInt(parts[2], 10);
+                            const m = parseInt(parts[1], 10) - 1;
+                            const y = parts[0];
+                            return `${d} ${months[m]} ${y}`;
+                          }
+                          return activityDate;
+                        })()}
+                      </strong>
                     </div>
                   </div>
 
@@ -1125,24 +1174,87 @@ export function PublicUploadPortal({
                         </div>
                       </div>
 
-                      {/* Checkbox Opsi Berkas Susulan */}
-                      <div className="pt-3 border-t border-amber-200/90 dark:border-amber-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={allowSupplementary}
-                            onChange={(e) => setAllowSupplementary(e.target.checked)}
-                            className="h-4 w-4 rounded text-amber-600 focus:ring-amber-500 border-amber-300 cursor-pointer"
-                          />
-                          <span className="font-extrabold text-amber-950 dark:text-amber-100">
-                            Izinkan kirim sebagai berkas susulan / berkas tambahan
-                          </span>
-                        </label>
-                        <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-400">
-                          {allowSupplementary
-                            ? "✓ Mode susulan aktif (Pengiriman diizinkan)"
-                            : "🔒 Pengiriman dicegah otomatis untuk kerapian data"}
-                        </span>
+                      {/* Opsi Tindakan Data Ganda: Ganti Berkas Lama vs Berkas Susulan */}
+                      <div className="pt-3 border-t border-amber-200/90 dark:border-amber-800/60 space-y-2.5 text-xs">
+                        <p className="font-extrabold text-amber-900 dark:text-amber-200">
+                          Pilih tindakan untuk berkas Anda:
+                        </p>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {/* Opsi 1: Perbarui & Ganti Berkas Lama */}
+                          <label
+                            onClick={() => {
+                              setReplacePrevious(true);
+                              setAllowSupplementary(false);
+                            }}
+                            className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                              replacePrevious
+                                ? "bg-amber-100/90 dark:bg-amber-900/60 border-amber-500 shadow-xs"
+                                : "bg-white/70 dark:bg-slate-900/50 border-amber-200 dark:border-amber-900/50 hover:bg-white"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="duplicateAction"
+                              checked={replacePrevious}
+                              onChange={() => {
+                                setReplacePrevious(true);
+                                setAllowSupplementary(false);
+                              }}
+                              className="mt-0.5 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                            />
+                            <div>
+                              <span className="font-bold text-slate-900 dark:text-white block">
+                                🔄 Perbarui & Ganti Berkas Lama
+                              </span>
+                              <span className="text-[11px] text-muted-foreground block mt-0.5 leading-snug">
+                                Berkas lama di Google Drive akan langsung dihapus dan digantikan dengan berkas baru ini.
+                              </span>
+                            </div>
+                          </label>
+
+                          {/* Opsi 2: Kirim Sebagai Berkas Susulan */}
+                          <label
+                            onClick={() => {
+                              setAllowSupplementary(true);
+                              setReplacePrevious(false);
+                            }}
+                            className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                              allowSupplementary
+                                ? "bg-amber-100/90 dark:bg-amber-900/60 border-amber-500 shadow-xs"
+                                : "bg-white/70 dark:bg-slate-900/50 border-amber-200 dark:border-amber-900/50 hover:bg-white"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="duplicateAction"
+                              checked={allowSupplementary}
+                              onChange={() => {
+                                setAllowSupplementary(true);
+                                setReplacePrevious(false);
+                              }}
+                              className="mt-0.5 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                            />
+                            <div>
+                              <span className="font-bold text-slate-900 dark:text-white block">
+                                ➕ Berkas Susulan / Tambahan
+                              </span>
+                              <span className="text-[11px] text-muted-foreground block mt-0.5 leading-snug">
+                                Berkas lama tetap disimpan rapi, dan berkas baru ditambahkan sebagai susulan.
+                              </span>
+                            </div>
+                          </label>
+                        </div>
+
+                        <div className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+                          {replacePrevious ? (
+                            "✓ Mode ganti berkas aktif: File lama di Google Drive akan diganti dengan yang baru."
+                          ) : allowSupplementary ? (
+                            "✓ Mode susulan aktif: File baru akan ditambahkan tanpa menghapus file lama."
+                          ) : (
+                            "🔒 Pilih salah satu opsi di atas untuk mengizinkan pengiriman."
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1165,18 +1277,23 @@ export function PublicUploadPortal({
                       <button
                         type="button"
                         onClick={() => {
+                          const nextSeed = notesSeed + 1;
+                          setNotesSeed(nextSeed);
                           const autoNote = generatePedagogicalNote({
                             categoryName: selectedCategory.name,
                             kelas: fieldAnswers.kelas,
                             waliKelas: submitterName,
+                            seedIndex: nextSeed,
                           });
                           setNotes(autoNote);
-                          toast.success("Catatan tambahan berhasil dibuat oleh AI! ✨");
+                          toast.success("Catatan tambahan berhasil dibuat oleh AI! ✨", {
+                            description: "Klik lagi untuk melihat variasi contoh lainnya.",
+                          });
                         }}
                         disabled={isUploading}
                         className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 cursor-pointer"
                       >
-                        <Sparkles className="h-3.5 w-3.5" /> Buat dengan AI
+                        <Sparkles className="h-3.5 w-3.5" /> Buat dengan AI (Ganti Variasi)
                       </button>
                     </div>
                     <Textarea
@@ -1364,19 +1481,26 @@ export function PublicUploadPortal({
                   <div className="pt-2">
                     <Button
                       type="submit"
-                      disabled={isUploading || (duplicateInfo?.isDuplicate && !allowSupplementary)}
+                      disabled={isUploading || (duplicateInfo?.isDuplicate && !allowSupplementary && !replacePrevious)}
                       className={`w-full h-14 rounded-2xl font-black text-base transition-all hover:scale-[1.01] active:scale-98 disabled:opacity-60 cursor-pointer gap-2 ${
-                        duplicateInfo?.isDuplicate && !allowSupplementary
+                        duplicateInfo?.isDuplicate && !allowSupplementary && !replacePrevious
                           ? "bg-slate-400 hover:bg-slate-400 text-white cursor-not-allowed shadow-none"
-                          : allowSupplementary
+                          : replacePrevious
                           ? "bg-gradient-to-r from-amber-600 via-teal-600 to-emerald-600 hover:from-amber-500 hover:to-emerald-500 text-white shadow-xl shadow-amber-600/25"
+                          : allowSupplementary
+                          ? "bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-500 hover:from-teal-500 hover:to-emerald-500 text-white shadow-xl shadow-teal-600/25"
                           : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white shadow-xl shadow-emerald-600/25"
                       }`}
                     >
-                      {duplicateInfo?.isDuplicate && !allowSupplementary ? (
+                      {duplicateInfo?.isDuplicate && !allowSupplementary && !replacePrevious ? (
                         <>
                           <AlertTriangle className="h-5 w-5" />
-                          <span>Sudah Diisi Hari Ini (Cegah Duplikasi Data)</span>
+                          <span>Pilih Tindakan Duplikasi di Atas</span>
+                        </>
+                      ) : replacePrevious ? (
+                        <>
+                          <RotateCcw className="h-5 w-5" />
+                          <span>Ganti Berkas Lama di Google Drive</span>
                         </>
                       ) : allowSupplementary ? (
                         <>

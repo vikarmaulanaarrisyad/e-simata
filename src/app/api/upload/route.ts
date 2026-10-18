@@ -4,6 +4,7 @@ import {
   uploadStreamToDrive,
   setupSubmissionFolder,
   sanitizeFileName,
+  deleteMultipleFilesFromDrive,
 } from "@/lib/google-drive";
 import { checkDuplicateSubmission } from "@/actions/submissions";
 
@@ -18,8 +19,10 @@ export async function POST(req: NextRequest) {
     const submitterContact = (formData.get("submitterContact") as string) || null;
     let notes = (formData.get("notes") as string) || null;
     const madrasah = (formData.get("madrasah") as string) || (formData.get("nama_madrasah") as string) || null;
+    const activityDate = (formData.get("activityDate") as string) || (formData.get("tanggal") as string) || null;
     const fieldsDataRaw = (formData.get("fieldsData") as string) || "{}";
     const allowSupplementary = formData.get("allowSupplementary") === "true";
+    const replaceSubmissionId = (formData.get("replaceSubmissionId") as string) || null;
 
     if (!categoryId) {
       return NextResponse.json(
@@ -115,8 +118,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3c. Cek data ganda: Cegah pengiriman berulang pada hari/tanggal yang sama
-    if (selectedClass && !allowSupplementary) {
+    // 3c. Cek data ganda: Cegah pengiriman berulang pada hari/tanggal yang sama (kecuali jika opsi replace/update diaktifkan)
+    if (selectedClass && !allowSupplementary && !replaceSubmissionId) {
       const dupCheck = await checkDuplicateSubmission({
         categoryId: category.id,
         madrasah,
@@ -141,17 +144,71 @@ export async function POST(req: NextRequest) {
       notes = notes ? `${notes} [Berkas Susulan]` : "[Berkas Susulan]";
     }
 
-    // 4. Buat record Submission di database terlebih dahulu
-    const submission = await prisma.submission.create({
-      data: {
-        categoryId: category.id,
-        madrasah,
-        submitterName,
-        submitterContact,
-        notes,
-        answersJson: fieldsData,
-      },
-    });
+    // 4. Jika replaceSubmissionId disertakan, hapus berkas-berkas lama dari Google Drive dan database
+    let existingSubmission = null;
+    if (replaceSubmissionId) {
+      existingSubmission = await prisma.submission.findUnique({
+        where: { id: replaceSubmissionId },
+        include: { files: true },
+      });
+
+      if (existingSubmission) {
+        console.log(`[Upload API Replace] Ditemukan submisi lama ID: ${replaceSubmissionId}`);
+        // Hapus semua file lama dari Google Drive
+        const oldDriveIds = existingSubmission.files
+          .map((f) => f.driveFileId)
+          .filter((id): id is string => Boolean(id && id.trim() !== ""));
+
+        if (oldDriveIds.length > 0) {
+          console.log(`[Upload API Replace] Menghapus ${oldDriveIds.length} file lama dari Google Drive...`);
+          await deleteMultipleFilesFromDrive(oldDriveIds);
+        }
+
+        // Hapus record UploadedFile lama dari database
+        await prisma.uploadedFile.deleteMany({
+          where: { submissionId: replaceSubmissionId },
+        });
+
+        // Hapus record FieldValue lama dari database
+        await prisma.fieldValue.deleteMany({
+          where: { submissionId: replaceSubmissionId },
+        });
+      }
+    }
+
+    // 5. Buat atau perbarui record Submission di database
+    const combinedAnswers = {
+      ...fieldsData,
+      ...(activityDate ? { activityDate, tanggal_kegiatan: activityDate } : {}),
+      ...(selectedClass ? { kelas: selectedClass, rombel: selectedClass } : {}),
+    };
+
+    let submission;
+    if (replaceSubmissionId && existingSubmission) {
+      submission = await prisma.submission.update({
+        where: { id: replaceSubmissionId },
+        data: {
+          madrasah: madrasah || existingSubmission.madrasah,
+          submitterName: submitterName || existingSubmission.submitterName,
+          submitterContact: submitterContact || existingSubmission.submitterContact,
+          notes: notes !== null ? notes : existingSubmission.notes,
+          answersJson: combinedAnswers,
+          updatedAt: new Date(),
+        },
+      });
+      console.log(`[Upload API Replace] Berhasil memperbarui data submisi ${submission.id}`);
+    } else {
+      submission = await prisma.submission.create({
+        data: {
+          categoryId: category.id,
+          madrasah,
+          submitterName,
+          submitterContact,
+          notes,
+          answersJson: combinedAnswers,
+        },
+      });
+    }
 
     // 5. Simpan isian FieldValue
     const fieldValuePromises = category.fields.map((field) => {
@@ -173,13 +230,14 @@ export async function POST(req: NextRequest) {
     await Promise.all(fieldValuePromises);
 
     // 7. Siapkan hierarki folder bertingkat di Google Drive:
-    // [Kategori] ➔ [Kelas] (jika ada) ➔ [Subfolder Submisi]
+    // SIMATA ➔ [Nama Madrasah] ➔ [Kategori] ➔ [Tanggal: format Indonesia] ➔ [Kelas]
     const baseFolderId = category.driveFolderId || process.env.GOOGLE_DRIVE_FOLDER_ID || null;
     const folderStructure = await setupSubmissionFolder({
       categoryName: category.name,
       madrasahName: madrasah,
       className: selectedClass,
       submitterName,
+      activityDate,
       baseFolderId,
     });
 
@@ -203,6 +261,7 @@ export async function POST(req: NextRequest) {
         madrasahName: madrasah,
         className: selectedClass,
         submitterName,
+        activityDate,
         index: i,
         totalFiles,
       });

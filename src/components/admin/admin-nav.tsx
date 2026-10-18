@@ -16,6 +16,7 @@ import {
   Sparkles,
   CalendarDays,
   LogOut,
+  Printer,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,12 @@ export function AdminSidebar({ driveStatus }: { driveStatus: DriveStatus }) {
       title: "Submisi & Berkas Masuk",
       href: "/admin/submissions",
       icon: FileCheck2,
+      exact: false,
+    },
+    {
+      title: "Laporan Kegiatan (PDF F4)",
+      href: "/admin/reports",
+      icon: Printer,
       exact: false,
     },
     {
@@ -249,6 +256,7 @@ export function AdminHeader({ driveStatus }: { driveStatus: DriveStatus }) {
     if (pathname.includes("/admin/categories/") && pathname.includes("/fields"))
       return "Dynamic Form Builder Kustom";
     if (pathname === "/admin/submissions") return "Daftar Submisi & Berkas Masuk";
+    if (pathname === "/admin/reports") return "Laporan Rekapitulasi Kegiatan (Format PDF F4)";
     if (pathname === "/admin/settings") return "Koneksi Google Drive & Pengaturan";
     return "Admin Portal";
   };
@@ -319,6 +327,12 @@ export function AdminHeader({ driveStatus }: { driveStatus: DriveStatus }) {
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-50 text-slate-700"
                 >
                   <FileCheck2 className="h-4 w-4 text-emerald-600" /> Submisi & Berkas Masuk
+                </Link>
+                <Link
+                  href="/admin/reports"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-50 text-slate-700"
+                >
+                  <Printer className="h-4 w-4 text-emerald-600" /> Laporan Kegiatan (PDF F4)
                 </Link>
                 <Link
                   href="/admin/settings"

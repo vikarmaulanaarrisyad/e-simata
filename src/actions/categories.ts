@@ -1,6 +1,7 @@
 "use server";
 
 import prisma from "@/lib/prisma";
+import { deleteMultipleFilesFromDrive } from "@/lib/google-drive";
 import { revalidatePath } from "next/cache";
 
 export async function getCategories() {
@@ -146,6 +147,21 @@ export async function updateCategory(
 
 export async function deleteCategory(id: string) {
   try {
+    // 1. Ambil semua berkas yang terhubung dengan kategori ini
+    const files = await prisma.uploadedFile.findMany({
+      where: { categoryId: id },
+      select: { driveFileId: true },
+    });
+
+    const driveIds = files
+      .map((f) => f.driveFileId)
+      .filter((driveId): driveId is string => Boolean(driveId && driveId.trim() !== ""));
+
+    if (driveIds.length > 0) {
+      console.log(`[deleteCategory] Menghapus ${driveIds.length} berkas Google Drive untuk kategori ${id}...`);
+      await deleteMultipleFilesFromDrive(driveIds);
+    }
+
     await prisma.category.delete({
       where: { id },
     });
@@ -154,6 +170,8 @@ export async function deleteCategory(id: string) {
     revalidatePath("/");
     return { success: true };
   } catch (error: any) {
+    console.error("[deleteCategory error]", error);
     return { success: false, error: error.message };
   }
 }
+

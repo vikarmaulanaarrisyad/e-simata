@@ -69,16 +69,36 @@ export async function createAdminSession(username: string, rememberMe = true) {
   return token;
 }
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth-options";
+
 /**
- * Mendapatkan data sesi admin yang sedang login
+ * Mendapatkan data sesi admin yang sedang login (NextAuth & Direct Cookie)
  */
 export async function getAdminSession() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(COOKIE_NAME)?.value;
-  if (!token) return null;
-  const { valid, payload } = await verifyToken(token);
-  if (!valid) return null;
-  return payload;
+  try {
+    const nextAuthSession = await getServerSession(authOptions);
+    if (nextAuthSession?.user) {
+      return {
+        user: nextAuthSession.user.name || "Administrator SIMATA",
+        email: nextAuthSession.user.email,
+        role: (nextAuthSession.user as any).role || "admin",
+      };
+    }
+  } catch {
+    // Fallback to token cookie
+  }
+
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get(COOKIE_NAME)?.value;
+    if (!token) return null;
+    const { valid, payload } = await verifyToken(token);
+    if (!valid) return null;
+    return payload;
+  } catch {
+    return null;
+  }
 }
 
 /**

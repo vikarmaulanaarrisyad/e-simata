@@ -182,22 +182,48 @@ export function closeSwal() {
 }
 
 /**
- * Confirmation dialog
+ * Confirmation dialog (mendukung icon warning & tombol merah bahaya)
  */
 export function showSwalConfirm(
   title: string,
   message: string,
-  confirmText: string = "Ya, Lanjutkan"
+  confirmText: string = "Ya, Lanjutkan",
+  isDanger: boolean = false
 ): Promise<boolean> {
   return Swal.fire({
-    icon: "question",
+    icon: isDanger ? "warning" : "question",
     title,
-    text: message,
+    html: message,
     showCancelButton: true,
     confirmButtonText: confirmText,
     cancelButtonText: "Batal",
-    customClass,
+    customClass: {
+      ...customClass,
+      confirmButton: isDanger
+        ? "px-6 py-2.5 rounded-xl font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-600/20 transition-all active:scale-95 cursor-pointer"
+        : customClass.confirmButton,
+      actions: "flex flex-col sm:flex-row gap-2.5 mt-4 w-full justify-center",
+    },
     buttonsStyling: false,
-    backdrop: `rgba(15, 23, 42, 0.65)`,
+    backdrop: `rgba(15, 23, 42, 0.70)`,
   }).then((res) => res.isConfirmed);
 }
+
+/**
+ * Tampilkan SweetAlert Success ringkas dan elegan (untuk aksi hapus, edit, dan update)
+ */
+export function showSwalSuccessAlert(title: string, message: string) {
+  return Swal.fire({
+    icon: "success",
+    title,
+    html: `<p class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">${message}</p>`,
+    confirmButtonText: "Alhamdulillah, Siap",
+    customClass: {
+      ...customClass,
+      confirmButton: "px-6 py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 transition-all active:scale-95 cursor-pointer",
+    },
+    buttonsStyling: false,
+    backdrop: `rgba(15, 23, 42, 0.65)`,
+  });
+}
+

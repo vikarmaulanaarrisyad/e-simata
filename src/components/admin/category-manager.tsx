@@ -34,6 +34,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { createCategory, updateCategory, deleteCategory } from "@/actions/categories";
+import {
+  showSwalConfirm,
+  showSwalLoading,
+  showSwalSuccessAlert,
+  showSwalError,
+  closeSwal,
+} from "@/lib/swal";
 import { toast } from "sonner";
 
 interface CategoryItem {
@@ -150,24 +157,37 @@ export function CategoryManager({ initialCategories }: { initialCategories: Cate
   };
 
   const handleDelete = async (id: string, catName: string) => {
-    if (
-      !confirm(
-        `Hapus kategori "${catName}" beserta semua konfigurasi form & berkas di dalamnya?`
-      )
-    ) {
-      return;
-    }
+    const confirmed = await showSwalConfirm(
+      "Hapus Kategori & Berkas Drive?",
+      `Apakah Anda yakin ingin menghapus kategori <b>"${catName}"</b>?<br><br><span class="text-xs text-rose-600 dark:text-rose-400 font-bold">⚠️ Semua formulir isian, data submisi, dan berkas di Google Drive untuk kategori ini juga akan dihapus permanen.</span>`,
+      "Ya, Hapus Kategori",
+      true
+    );
+
+    if (!confirmed) return;
+
+    showSwalLoading({
+      title: "Menghapus Kategori & Berkas...",
+      stepText: "Sedang menghapus berkas dari Google Drive dan database...",
+      progressPercent: 60,
+    });
 
     try {
       const res = await deleteCategory(id);
+      closeSwal();
+
       if (res.success) {
         setCategories((prev) => prev.filter((c) => c.id !== id));
-        toast.success(`Kategori "${catName}" berhasil dihapus.`);
+        showSwalSuccessAlert(
+          "Kategori Berhasil Dihapus!",
+          `Kategori "${catName}" dan semua berkas Google Drive terkait berhasil dihapus.`
+        );
       } else {
-        toast.error(res.error || "Gagal menghapus kategori.");
+        showSwalError("Gagal Menghapus Kategori", res.error || "Terjadi kesalahan saat menghapus kategori.");
       }
     } catch (err: any) {
-      toast.error(err.message || "Gagal menghapus kategori.");
+      closeSwal();
+      showSwalError("Terjadi Kesalahan", err.message || "Gagal menghapus kategori.");
     }
   };
 
