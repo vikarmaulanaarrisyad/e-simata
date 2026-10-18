@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { uploadStreamToDrive, deleteFileFromDrive, sanitizeFileName } from "@/lib/google-drive";
 import { revalidatePath } from "next/cache";
 
+export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {

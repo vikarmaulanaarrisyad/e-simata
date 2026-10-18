@@ -8,6 +8,7 @@ import {
 } from "@/lib/google-drive";
 import { checkDuplicateSubmission } from "@/actions/submissions";
 
+export const dynamic = "force-dynamic";
 export const maxDuration = 60; // Allow sufficient time for multiple large file uploads
 
 export async function POST(req: NextRequest) {

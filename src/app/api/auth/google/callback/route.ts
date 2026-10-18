@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleGoogleCallback } from "@/lib/google-oauth";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   const searchParams = req.nextUrl.searchParams;
   const code = searchParams.get("code");
