@@ -22,9 +22,9 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "SIMATA - MI Bustanul Huda Dawuhan | Portal Unggah Berkas",
+  title: "SIMATA - MI Bustanul Huda | Portal Unggah Berkas",
   description:
-    "Sistem Informasi Manajemen Berkas & Dokumentasi Terintegrasi Google Drive Cloud API MI Bustanul Huda Dawuhan.",
+    "Sistem Informasi Manajemen Berkas & Dokumentasi Terintegrasi Google Drive Cloud API MI Bustanul Huda.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,

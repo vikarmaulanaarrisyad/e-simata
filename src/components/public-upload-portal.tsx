@@ -126,8 +126,8 @@ export function PublicUploadPortal({
   madrasahs?: MadrasahItem[];
 }) {
   const defaultMadrasahs: MadrasahItem[] = [
-    { id: "mi01", name: "MI Bustanul Huda 01", code: "MI 01", isActive: true },
-    { id: "mi02", name: "MI Bustanul Huda 02", code: "MI 02", isActive: true },
+    { id: "mi01", name: "MI Bustanul Huda 01 Dawuhan", code: "MI 01", isActive: true },
+    { id: "mi02", name: "MI Bustanul Huda 02 Dawuhan", code: "MI 02", isActive: true },
   ];
 
   const availableMadrasahs = madrasahs && madrasahs.length > 0 ? madrasahs : defaultMadrasahs;
@@ -248,19 +248,19 @@ export function PublicUploadPortal({
 
   const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
 
-  // Cek duplikasi data pengisian otomatis setiap kali rombel kelas atau madrasah berubah
-  useEffect(() => {
-    const currentClass =
-      fieldAnswers.kelas ||
-      Object.entries(fieldAnswers).find(([k]) =>
-        k.toLowerCase().includes("kelas")
-      )?.[1];
+  const currentClassValue =
+    fieldAnswers.kelas ||
+    Object.entries(fieldAnswers).find(([k]) =>
+      k.toLowerCase().includes("kelas")
+    )?.[1];
 
+  // Cek duplikasi data pengisian otomatis setiap kali rombel kelas, madrasah, atau tanggal kegiatan berubah
+  useEffect(() => {
     if (
       !selectedCategory ||
-      !currentClass ||
-      typeof currentClass !== "string" ||
-      !currentClass.trim()
+      !currentClassValue ||
+      typeof currentClassValue !== "string" ||
+      !currentClassValue.trim()
     ) {
       setDuplicateInfo(null);
       setAllowSupplementary(false);
@@ -273,7 +273,8 @@ export function PublicUploadPortal({
     checkDuplicateSubmission({
       categoryId: selectedCategory.id,
       madrasah: selectedMadrasah,
-      kelas: currentClass.trim(),
+      kelas: currentClassValue.trim(),
+      date: activityDate,
     })
       .then((res) => {
         if (!active) return;
@@ -295,7 +296,7 @@ export function PublicUploadPortal({
     return () => {
       active = false;
     };
-  }, [selectedCategory, selectedMadrasah, fieldAnswers]);
+  }, [selectedCategory?.id, selectedMadrasah, currentClassValue, activityDate]);
 
   const getCategoryIcon = (iconName: string | null) => {
     switch (iconName) {
@@ -1013,7 +1014,7 @@ export function PublicUploadPortal({
                                   {m.name}
                                 </p>
                                 {/* <p className="text-[10px] sm:text-[11px] text-muted-foreground truncate">
-                                  {m.description || "Dawuhan, Grujugan, Bondowoso"}
+                                  {m.description || "Madrasah Ibtidaiyah Bustanul Huda"}
                                 </p> */}
                               </div>
                             </div>

@@ -88,13 +88,17 @@ export function ReportGenerator({
 
   const [isPending, startTransition] = useTransition();
 
-  const loadReport = () => {
+  const isFirstMount = React.useRef(true);
+
+  const loadReport = (isSilent = false) => {
     startTransition(async () => {
-      showSwalLoading({
-        title: "Menyusun Laporan...",
-        stepText: "Mengumpulkan rekapitulasi data rombel & berkas Google Drive...",
-        progressPercent: 50,
-      });
+      if (!isSilent) {
+        showSwalLoading({
+          title: "Menyusun Laporan...",
+          stepText: "Mengumpulkan rekapitulasi data rombel & berkas Google Drive...",
+          progressPercent: 50,
+        });
+      }
 
       try {
         const res = await getReportData({
@@ -103,23 +107,36 @@ export function ReportGenerator({
           madrasah: selectedMadrasah,
         });
 
-        closeSwal();
+        if (!isSilent) {
+          closeSwal();
+        }
 
         if (res.success && res.report) {
           setReportData(res.report as any);
-          toast.success("Laporan berhasil disusun dan siap dicetak ke format F4.");
+          if (!isSilent) {
+            toast.success("Laporan berhasil disusun dan siap dicetak ke format F4.");
+          }
         } else {
-          showSwalError("Gagal Memuat Laporan", res.error || "Terjadi kesalahan.");
+          if (!isSilent) {
+            showSwalError("Gagal Memuat Laporan", res.error || "Terjadi kesalahan.");
+          }
         }
       } catch (err: any) {
-        closeSwal();
-        showSwalError("Terjadi Kesalahan", err.message || "Gagal menyusun laporan.");
+        if (!isSilent) {
+          closeSwal();
+          showSwalError("Terjadi Kesalahan", err.message || "Gagal menyusun laporan.");
+        }
       }
     });
   };
 
   useEffect(() => {
-    loadReport();
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      loadReport(true); // Silent on initial load so no intrusive modal pops up
+    } else {
+      loadReport(false);
+    }
   }, [selectedCategory, selectedDate, selectedMadrasah]);
 
   const handlePrint = () => {
@@ -425,7 +442,7 @@ export function ReportGenerator({
             fontFamily: "'Times New Roman', Times, serif",
           }}
         >
-          {/* 1. KOP SURAT RESMI MADRASAH IBTIDAIYAH BUSTANUL HUDA DAWUHAN */}
+          {/* 1. KOP SURAT RESMI MADRASAH IBTIDAIYAH BUSTANUL HUDA */}
           <div className="text-center pb-3 relative">
             {/* Logo Kemenag / Madrasah di sisi kiri kop */}
             <div className="flex items-center justify-between border-b-4 border-double border-black pb-3">
@@ -446,13 +463,13 @@ export function ReportGenerator({
                   Kantor Kementerian Agama Kabupaten Banyumas
                 </h2>
                 <h1 className="text-base font-black uppercase tracking-normal text-black m-0 leading-tight mt-1 font-serif">
-                  MADRASAH IBTIDAIYAH BUSTANUL HUDA DAWUHAN
+                  MADRASAH IBTIDAIYAH BUSTANUL HUDA
                 </h1>
                 <p className="text-[10px] text-slate-600 m-0 mt-1 leading-snug">
                   NSM: 111233020084 • NPSN: 60710777 • Terakreditasi "A" (Unggul)
                 </p>
                 <p className="text-[9.5px] text-slate-600 m-0 leading-tight">
-                  Alamat: Jl. Raya Dawuhan, Desa Dawuhan, Kec. Banyumas, Kab. Banyumas - Jawa Tengah 53192
+                  Alamat: Kec. Banyumas, Kab. Banyumas - Jawa Tengah 53192
                 </p>
               </div>
 
@@ -651,7 +668,7 @@ export function ReportGenerator({
 
                 <div className="w-64 text-center">
                   <p className="m-0 leading-tight">
-                    Dawuhan, {reportData?.dateFormatted || "19 Oktober 2026"}
+                    Banyumas, {reportData?.dateFormatted || "19 Oktober 2026"}
                   </p>
                   <p className="font-bold m-0 leading-tight">
                     Koordinator Program SIMATA
@@ -671,7 +688,7 @@ export function ReportGenerator({
               {/* Footer Catatan Sistem */}
               <div className="mt-8 pt-2 border-t border-slate-300 text-[9px] text-slate-500 flex justify-between items-center">
                 <span>
-                  Dokumen ini dicetak otomatis melalui SIMATA (Sistem Informasi Madrasah Digital) MI Bustanul Huda Dawuhan.
+                  Dokumen ini dicetak otomatis melalui SIMATA (Sistem Informasi Madrasah Digital) MI Bustanul Huda.
                 </span>
                 <span>Ukuran Kertas: F4 (215 × 330 mm) • Margin: 20 mm</span>
               </div>
