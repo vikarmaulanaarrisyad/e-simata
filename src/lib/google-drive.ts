@@ -241,12 +241,13 @@ export async function uploadStreamToDrive(params: {
 export function sanitizeFileName(params: {
   originalName: string;
   categoryName: string;
+  madrasahName?: string | null;
   className?: string | null;
   submitterName?: string | null;
   index?: number;
   totalFiles?: number;
 }): string {
-  const { originalName, categoryName, className, submitterName, index = 0, totalFiles = 1 } = params;
+  const { originalName, categoryName, madrasahName, className, submitterName, index = 0, totalFiles = 1 } = params;
 
   // 1. Ekstrak ekstensi berkas
   const lastDot = originalName.lastIndexOf(".");
@@ -260,6 +261,15 @@ export function sanitizeFileName(params: {
   const cleanCat = categoryName
     .replace(/[^a-zA-Z0-9]/g, "")
     .slice(0, 20) || "Kategori";
+
+  // 2b. Bersihkan nama madrasah jika ada (misal: "MI01" atau "MI02")
+  let cleanMadrasah = "";
+  if (madrasahName && madrasahName.trim() !== "") {
+    const mStr = madrasahName.replace(/[^a-zA-Z0-9]/g, "");
+    if (mStr.includes("01")) cleanMadrasah = "_MI01";
+    else if (mStr.includes("02")) cleanMadrasah = "_MI02";
+    else cleanMadrasah = `_${mStr.slice(0, 10)}`;
+  }
 
   // 3. Bersihkan string kelas jika ada (misal: "Kelas1A")
   const cleanClass = className && className.trim() !== ""
@@ -293,7 +303,7 @@ export function sanitizeFileName(params: {
   // 7. Jika terdapat banyak berkas dalam 1 pengiriman, tambahkan penomoran (_01, _02, dst)
   const indexSuffix = totalFiles > 1 ? `_${String(index + 1).padStart(2, "0")}` : "";
 
-  return `${cleanCat}${cleanClass}_${dateStr}_${cleanSubmitter}_${cleanBase}${indexSuffix}${ext}`;
+  return `${cleanCat}${cleanMadrasah}${cleanClass}_${dateStr}_${cleanSubmitter}_${cleanBase}${indexSuffix}${ext}`;
 }
 
 /**
@@ -402,41 +412,55 @@ export async function getOrCreateDriveFolder(params: {
  */
 export async function setupSubmissionFolder(params: {
   categoryName: string;
+  madrasahName?: string | null;
   className?: string | null;
   submitterName?: string | null;
   baseFolderId?: string | null;
 }): Promise<{
   categoryFolderId: string;
+  madrasahFolderId?: string | null;
   classFolderId?: string | null;
   submissionFolderId: string;
   submissionFolderName: string;
   submissionFolderUrl: string;
   isMock: boolean;
 }> {
-  const { categoryName, className, submitterName, baseFolderId } = params;
+  const { categoryName, madrasahName, className, submitterName, baseFolderId } = params;
 
-  // 1. Level 1: Folder Kategori (misal: "SIMATA - Jurnal Syukur" atau "SIMATA - Pojok Syukur")
+  // 1. Level 1: Folder Kategori (misal: "SIMATA - Jurnal Syukur")
   const categoryFolderName = `SIMATA - ${categoryName.trim()}`;
   const categoryFolder = await getOrCreateDriveFolder({
     folderName: categoryFolderName,
     parentFolderId: baseFolderId,
   });
 
-  let parentForSubmissionId = categoryFolder.id;
+  let currentParentId = categoryFolder.id;
+  let madrasahFolderId: string | null = null;
   let classFolderId: string | null = null;
 
-  // 2. Level 2: Subfolder Kelas jika ada (misal: "Kelas 1 A", "Kelas 2 B", dst. sampai "Kelas 6 B")
+  // 2. Level 2: Subfolder Madrasah jika ada (misal: "MI Bustanul Huda 01 Dawuhan")
+  if (madrasahName && madrasahName.trim() !== "") {
+    const cleanMadrasah = madrasahName.trim();
+    const madrasahFolder = await getOrCreateDriveFolder({
+      folderName: cleanMadrasah,
+      parentFolderId: currentParentId,
+    });
+    currentParentId = madrasahFolder.id;
+    madrasahFolderId = madrasahFolder.id;
+  }
+
+  // 3. Level 3: Subfolder Kelas jika ada (misal: "Kelas 1 A", "Kelas 2 B", dst. sampai "Kelas 6 B")
   if (className && className.trim() !== "") {
     const cleanClassName = className.trim();
     const classFolder = await getOrCreateDriveFolder({
       folderName: cleanClassName,
-      parentFolderId: categoryFolder.id,
+      parentFolderId: currentParentId,
     });
-    parentForSubmissionId = classFolder.id;
+    currentParentId = classFolder.id;
     classFolderId = classFolder.id;
   }
 
-  // 3. Level 3: Subfolder Submisi (misal: "2026-10-18 - Muhammad Rizky (14.30)")
+  // 4. Level 4: Subfolder Submisi (misal: "2026-10-18 - Wali Kelas Siti Aminah (14.30)")
   const now = new Date();
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, "0");
@@ -453,11 +477,12 @@ export async function setupSubmissionFolder(params: {
 
   const submissionFolder = await getOrCreateDriveFolder({
     folderName: submissionFolderName,
-    parentFolderId: parentForSubmissionId,
+    parentFolderId: currentParentId,
   });
 
   return {
     categoryFolderId: categoryFolder.id,
+    madrasahFolderId,
     classFolderId,
     submissionFolderId: submissionFolder.id,
     submissionFolderName,
