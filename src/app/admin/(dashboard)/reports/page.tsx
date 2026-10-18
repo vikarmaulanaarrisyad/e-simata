@@ -4,8 +4,8 @@ import { getMadrasahs } from "@/actions/madrasahs";
 import { ReportGenerator } from "@/components/admin/report-generator";
 
 export const metadata = {
-  title: "Laporan Kegiatan (PDF F4) - SIMATA MI Bustanul Huda Dawuhan",
-  description: "Susun dan cetak laporan kegiatan per rombel kelas dalam format kertas F4 margin 2cm",
+  title: "Laporan Dokumentasi (PDF F4 Landscape) - SIMATA MI Bustanul Huda Dawuhan",
+  description: "Susun dan unduh langsung laporan dokumentasi kegiatan pembiasaan siswa dalam format kertas F4 Landscape (330 × 215 mm)",
 };
 
 export default async function AdminReportsPage() {

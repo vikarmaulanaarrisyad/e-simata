@@ -547,7 +547,7 @@ export function SubmissionsExplorer({
               variant="outline"
               className="gap-2 bg-white/10 hover:bg-white/20 text-white border-white/20 rounded-xl text-xs font-bold backdrop-blur-md cursor-pointer"
             >
-              <Printer className="h-4 w-4" /> Cetak Laporan F4
+              <FileCheck2 className="h-4 w-4" /> Unduh Laporan PDF F4
             </Button>
           </Link>
           <Button
