@@ -200,8 +200,9 @@ export function showSwalConfirm(
     customClass: {
       ...customClass,
       confirmButton: isDanger
-        ? "px-6 py-2.5 rounded-xl font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-600/20 transition-all active:scale-95 cursor-pointer"
+        ? "swal2-confirm-danger px-6 py-2.5 rounded-xl font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-600/30 transition-all active:scale-95 cursor-pointer"
         : customClass.confirmButton,
+      cancelButton: "px-5 py-2.5 rounded-xl font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 transition-all cursor-pointer",
       actions: "flex flex-col sm:flex-row gap-2.5 mt-4 w-full justify-center",
     },
     buttonsStyling: false,

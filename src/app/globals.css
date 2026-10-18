@@ -137,3 +137,77 @@ body {
   color: #ef4444 !important;
 }
 
+/* SweetAlert2 Button Styling Guarantees */
+.swal2-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.75rem !important;
+  margin-top: 1.5rem !important;
+  width: 100% !important;
+}
+
+.swal2-confirm {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0.625rem 1.5rem !important;
+  border-radius: 0.75rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  background-color: #059669 !important; /* Emerald 600 */
+  border: 1px solid transparent !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease-in-out !important;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.25) !important;
+}
+
+.swal2-confirm:hover {
+  background-color: #047857 !important; /* Emerald 700 */
+}
+
+/* Danger Confirm Button (e.g. Hapus Data Submisi & Berkas) */
+.swal2-confirm.swal2-confirm-danger,
+.swal2-confirm.bg-rose-600 {
+  background-color: #e11d48 !important; /* Rose 600 */
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(225, 29, 72, 0.35) !important;
+}
+
+.swal2-confirm.swal2-confirm-danger:hover,
+.swal2-confirm.bg-rose-600:hover {
+  background-color: #be123c !important; /* Rose 700 */
+}
+
+.swal2-cancel {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0.625rem 1.25rem !important;
+  border-radius: 0.75rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 700 !important;
+  color: #334155 !important; /* Slate 700 */
+  background-color: #f1f5f9 !important; /* Slate 100 */
+  border: 1px solid #cbd5e1 !important; /* Slate 300 */
+  cursor: pointer !important;
+  transition: all 0.15s ease-in-out !important;
+}
+
+.swal2-cancel:hover {
+  background-color: #e2e8f0 !important; /* Slate 200 */
+  color: #0f172a !important;
+}
+
+.dark .swal2-cancel {
+  color: #e2e8f0 !important;
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+.dark .swal2-cancel:hover {
+  background-color: #334155 !important;
+}
+
