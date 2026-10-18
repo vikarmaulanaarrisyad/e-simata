@@ -79,16 +79,23 @@ export async function getGoogleDriveClientAsync() {
   }
 }
 
+// Cache Drive status selama 60 detik untuk mempercepat render dashboard
+let driveStatusCache: { data: any; expiresAt: number } | null = null;
+
 /**
  * Cek status konfigurasi Google Drive untuk Admin Dashboard
  */
-export async function checkGoogleDriveStatus() {
+export async function checkGoogleDriveStatus(forceRefresh = false) {
+  if (!forceRefresh && driveStatusCache && Date.now() < driveStatusCache.expiresAt) {
+    return driveStatusCache.data;
+  }
+
   // Cek apakah ada akun Google admin yang terhubung
   const adminAccount = await getConnectedAdminGoogleAccount();
   const targetFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID || null;
 
   if (adminAccount) {
-    return {
+    const result = {
       connected: true,
       isMock: false,
       authType: "oauth_admin",
@@ -98,13 +105,15 @@ export async function checkGoogleDriveStatus() {
       targetFolderId,
       message: `Terkoneksi langsung ke Google Drive Admin (${adminAccount.email}) via OAuth 2.0.`,
     };
+    driveStatusCache = { data: result, expiresAt: Date.now() + 60000 };
+    return result;
   }
 
   // Jika tidak ada akun admin, cek service account
   const { drive, isMock, authType } = await getGoogleDriveClientAsync();
 
   if (isMock || !drive) {
-    return {
+    const result = {
       connected: false,
       isMock: true,
       authType,
@@ -112,12 +121,14 @@ export async function checkGoogleDriveStatus() {
       message:
         "Belum ada akun Google admin yang terhubung. Klik tombol 'Hubungkan Akun Google' untuk langsung menghubungkan Google Drive Anda.",
     };
+    driveStatusCache = { data: result, expiresAt: Date.now() + 30000 };
+    return result;
   }
 
   try {
     const res = await drive.about.get({ fields: "user, storageQuota" });
 
-    return {
+    const result = {
       connected: true,
       isMock: false,
       authType,
@@ -126,9 +137,11 @@ export async function checkGoogleDriveStatus() {
       targetFolderId,
       message: "Terkoneksi dengan Google Drive API via Service Account.",
     };
+    driveStatusCache = { data: result, expiresAt: Date.now() + 60000 };
+    return result;
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    return {
+    const result = {
       connected: false,
       isMock: true,
       authType,
@@ -136,6 +149,8 @@ export async function checkGoogleDriveStatus() {
       targetFolderId,
       message: `Kredensial ada tetapi gagal otentikasi Google Drive: ${errorMsg}`,
     };
+    driveStatusCache = { data: result, expiresAt: Date.now() + 15000 };
+    return result;
   }
 }
 
@@ -337,24 +352,50 @@ export function sanitizeFileName(params: {
   return `${cleanCat}${cleanMadrasah}${cleanClass}_${dateStr}_${cleanSubmitter}_${cleanBase}${indexSuffix}${ext}`;
 }
 
+// In-memory cache folder Google Drive untuk memangkas latensi upload hierarki bertingkat
+interface FolderCacheItem {
+  id: string;
+  name: string;
+  isMock: boolean;
+  webViewLink?: string;
+  expiresAt: number;
+}
+const folderCache = new Map<string, FolderCacheItem>();
+
 /**
  * Mencari folder dengan nama tertentu di dalam parentFolderId, atau membuatnya jika belum ada
+ * Dilengkapi caching in-memory ber-TTL agar upload tidak terhambat query berulang ke Google Drive
  */
 export async function getOrCreateDriveFolder(params: {
   folderName: string;
   parentFolderId?: string | null;
 }): Promise<{ id: string; name: string; isMock: boolean; webViewLink?: string }> {
-  const { drive, isMock } = await getGoogleDriveClientAsync();
   const parentId = params.parentFolderId?.trim() || null;
+  const cacheKey = `${parentId || "root"}::${params.folderName.trim()}`;
+
+  // Periksa cache in-memory terlebih dahulu (TTL 2 jam)
+  const cached = folderCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return {
+      id: cached.id,
+      name: cached.name,
+      isMock: cached.isMock,
+      webViewLink: cached.webViewLink,
+    };
+  }
+
+  const { drive, isMock } = await getGoogleDriveClientAsync();
 
   if (isMock || !drive) {
     const mockId = `mock_folder_${params.folderName.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
-    return {
+    const mockRes = {
       id: mockId,
       name: params.folderName,
       webViewLink: `https://drive.google.com/drive/folders/${mockId}`,
       isMock: true,
     };
+    folderCache.set(cacheKey, { ...mockRes, expiresAt: Date.now() + 2 * 60 * 60 * 1000 });
+    return mockRes;
   }
 
   try {
@@ -379,12 +420,15 @@ export async function getOrCreateDriveFolder(params: {
 
     if (searchRes.data.files && searchRes.data.files.length > 0) {
       const existing = searchRes.data.files[0];
-      return {
+      const result = {
         id: existing.id!,
         name: existing.name!,
         webViewLink: existing.webViewLink || `https://drive.google.com/drive/folders/${existing.id}`,
         isMock: false,
       };
+      // Simpan di cache in-memory selama 2 jam
+      folderCache.set(cacheKey, { ...result, expiresAt: Date.now() + 2 * 60 * 60 * 1000 });
+      return result;
     }
 
     // 2. Jika belum ada, buat folder baru
@@ -405,25 +449,26 @@ export async function getOrCreateDriveFolder(params: {
 
     const newFolderId = createRes.data.id!;
 
-    // Berikan izin reader ke folder
-    try {
-      await drive.permissions.create({
+    // Berikan izin reader ke folder non-blocking
+    drive.permissions
+      .create({
         fileId: newFolderId,
         requestBody: { role: "reader", type: "anyone" },
         supportsAllDrives: true,
-      });
-    } catch {
-      // Abaikan jika izin publik dibatasi oleh domain Google Workspace
-    }
+      })
+      .catch(() => {});
 
-    return {
+    const newResult = {
       id: newFolderId,
       name: params.folderName,
       webViewLink: createRes.data.webViewLink || `https://drive.google.com/drive/folders/${newFolderId}`,
       isMock: false,
     };
+    folderCache.set(cacheKey, { ...newResult, expiresAt: Date.now() + 2 * 60 * 60 * 1000 });
+    return newResult;
   } catch (error) {
     console.error(`[getOrCreateDriveFolder error for ${params.folderName}]`, error);
+    folderCache.delete(cacheKey);
     // Jika gagal buat subfolder, kembalikan parentId jika ada agar proses upload tetap berjalan lancar
     if (parentId) {
       return {
@@ -604,7 +649,7 @@ export async function deleteFileFromDrive(fileId: string): Promise<{
 }
 
 /**
- * Menghapus kumpulan berkas sekaligus dari Google Drive
+ * Menghapus kumpulan berkas sekaligus dari Google Drive secara paralel
  */
 export async function deleteMultipleFilesFromDrive(fileIds: string[]): Promise<{
   deletedCount: number;
@@ -612,19 +657,23 @@ export async function deleteMultipleFilesFromDrive(fileIds: string[]): Promise<{
 }> {
   let deletedCount = 0;
   let failedCount = 0;
+  const validIds = fileIds.filter((id): id is string => Boolean(id && id.trim() !== ""));
 
-  for (const id of fileIds) {
-    if (!id || id.trim() === "") continue;
-    try {
-      const res = await deleteFileFromDrive(id);
-      if (res.success) {
+  if (validIds.length === 0) {
+    return { deletedCount: 0, failedCount: 0 };
+  }
+
+  // Hapus berkas secara paralel dengan batasan batch 4
+  const batchSize = 4;
+  for (let i = 0; i < validIds.length; i += batchSize) {
+    const batch = validIds.slice(i, i + batchSize);
+    const results = await Promise.allSettled(batch.map((id) => deleteFileFromDrive(id)));
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value.success) {
         deletedCount++;
       } else {
         failedCount++;
       }
-    } catch (err) {
-      console.error(`[deleteMultipleFilesFromDrive error for ${id}]`, err);
-      failedCount++;
     }
   }
 

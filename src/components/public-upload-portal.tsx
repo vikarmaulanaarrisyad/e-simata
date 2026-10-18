@@ -1012,9 +1012,9 @@ export function PublicUploadPortal({
                                 <p className="text-xs sm:text-sm font-black text-slate-900 dark:text-slate-100 truncate">
                                   {m.name}
                                 </p>
-                                <p className="text-[10px] sm:text-[11px] text-muted-foreground truncate">
+                                {/* <p className="text-[10px] sm:text-[11px] text-muted-foreground truncate">
                                   {m.description || "Dawuhan, Grujugan, Bondowoso"}
-                                </p>
+                                </p> */}
                               </div>
                             </div>
                             {isSelected && (

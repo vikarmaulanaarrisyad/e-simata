@@ -153,14 +153,14 @@ export async function getSubmissionsServerSide(params?: ServerSideTableParams) {
       ];
     }
 
-    // Filter date range
+    // Filter date range (WIB Asia/Jakarta UTC+7)
     if (params?.startDate || params?.endDate) {
       where.createdAt = {};
       if (params.startDate) {
-        where.createdAt.gte = new Date(`${params.startDate}T00:00:00.000Z`);
+        where.createdAt.gte = new Date(`${params.startDate}T00:00:00+07:00`);
       }
       if (params.endDate) {
-        where.createdAt.lte = new Date(`${params.endDate}T23:59:59.999Z`);
+        where.createdAt.lte = new Date(`${params.endDate}T23:59:59.999+07:00`);
       }
     }
 
@@ -408,6 +408,14 @@ export async function updateSubmission(
       }
     }
 
+    let updatedCreatedAt = undefined;
+    if (data.activityDate && data.activityDate.trim() !== "") {
+      const parts = data.activityDate.trim().split("-");
+      if (parts.length === 3 && parts[0].length === 4) {
+        updatedCreatedAt = new Date(`${data.activityDate.trim()}T12:00:00+07:00`);
+      }
+    }
+
     const updated = await prisma.submission.update({
       where: { id },
       data: {
@@ -416,6 +424,7 @@ export async function updateSubmission(
         notes: data.notes,
         madrasah: data.madrasah,
         answersJson: updatedAnswers,
+        ...(updatedCreatedAt ? { createdAt: updatedCreatedAt } : {}),
       } as any,
       include: {
         category: { select: { id: true, name: true, color: true } },

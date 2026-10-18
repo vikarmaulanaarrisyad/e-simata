@@ -125,6 +125,7 @@ export async function POST(req: NextRequest) {
         categoryId: category.id,
         madrasah,
         kelas: selectedClass,
+        date: activityDate,
       });
 
       if (dupCheck.success && dupCheck.isDuplicate && dupCheck.existingSubmission) {
@@ -184,6 +185,14 @@ export async function POST(req: NextRequest) {
       ...(selectedClass ? { kelas: selectedClass, rombel: selectedClass } : {}),
     };
 
+    let creationDate = new Date();
+    if (activityDate) {
+      const parts = activityDate.split("-");
+      if (parts.length === 3 && parts[0].length === 4) {
+        creationDate = new Date(`${activityDate}T12:00:00+07:00`);
+      }
+    }
+
     let submission;
     if (replaceSubmissionId && existingSubmission) {
       submission = await prisma.submission.update({
@@ -194,6 +203,7 @@ export async function POST(req: NextRequest) {
           submitterContact: submitterContact || existingSubmission.submitterContact,
           notes: notes !== null ? notes : existingSubmission.notes,
           answersJson: combinedAnswers,
+          createdAt: activityDate ? creationDate : existingSubmission.createdAt,
           updatedAt: new Date(),
         },
       });
@@ -207,6 +217,7 @@ export async function POST(req: NextRequest) {
           submitterContact,
           notes,
           answersJson: combinedAnswers,
+          createdAt: creationDate,
         },
       });
     }
@@ -244,63 +255,69 @@ export async function POST(req: NextRequest) {
 
     const targetFolderId = folderStructure.submissionFolderId;
 
-    // 8. Upload setiap berkas ke Google Drive dengan nama terstandarisasi yang rapi
-    const uploadedResults = [];
+    // 8. Upload setiap berkas ke Google Drive secara paralel (batch concurrency 3)
     const totalFiles = files.length;
+    const uploadedResults: any[] = new Array(totalFiles);
+    const concurrency = 3;
 
-    for (let i = 0; i < totalFiles; i++) {
-      const file = files[i];
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const isImage = file.type.startsWith("image/");
-      const isVideo = file.type.startsWith("video/");
-      const fileType = isImage ? "IMAGE" : isVideo ? "VIDEO" : "OTHER";
+    for (let i = 0; i < totalFiles; i += concurrency) {
+      const batch = files.slice(i, i + concurrency);
+      await Promise.all(
+        batch.map(async (file, batchIdx) => {
+          const fileIndex = i + batchIdx;
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const isImage = file.type.startsWith("image/");
+          const isVideo = file.type.startsWith("video/");
+          const fileType = isImage ? "IMAGE" : isVideo ? "VIDEO" : "OTHER";
 
-      // Standarisasi nama file: [Kategori]_[Kelas]_[YYYYMMDD]_[Pengirim]_[NamaBerkasBersih]_[Urut].[ext]
-      const cleanFileName = sanitizeFileName({
-        originalName: file.name,
-        categoryName: category.name,
-        madrasahName: madrasah,
-        className: selectedClass,
-        submitterName,
-        activityDate,
-        index: i,
-        totalFiles,
-      });
+          // Standarisasi nama file: [Kategori]_[Kelas]_[YYYYMMDD]_[Pengirim]_[NamaBerkasBersih]_[Urut].[ext]
+          const cleanFileName = sanitizeFileName({
+            originalName: file.name,
+            categoryName: category.name,
+            madrasahName: madrasah,
+            className: selectedClass,
+            submitterName,
+            activityDate,
+            index: fileIndex,
+            totalFiles,
+          });
 
-      // Upload ke Google Drive langsung ke subfolder submisi
-      const driveRes = await uploadStreamToDrive({
-        stream: buffer,
-        fileName: cleanFileName,
-        mimeType: file.type || "application/octet-stream",
-        folderId: targetFolderId,
-      });
+          // Upload ke Google Drive langsung ke subfolder submisi
+          const driveRes = await uploadStreamToDrive({
+            stream: buffer,
+            fileName: cleanFileName,
+            mimeType: file.type || "application/octet-stream",
+            folderId: targetFolderId,
+          });
 
-      // Simpan ke model UploadedFile
-      const uploadedRecord = await prisma.uploadedFile.create({
-        data: {
-          submissionId: submission.id,
-          categoryId: category.id,
-          fileName: driveRes.name,
-          fileSize: file.size,
-          fileType: fileType,
-          mimeType: file.type || "application/octet-stream",
-          driveFileId: driveRes.fileId,
-          driveUrl: driveRes.webViewLink,
-          driveThumbnailUrl: driveRes.thumbnailLink,
-          driveFolderId: targetFolderId || null,
-          status: "SUCCESS",
-        },
-      });
+          // Simpan ke model UploadedFile
+          const uploadedRecord = await prisma.uploadedFile.create({
+            data: {
+              submissionId: submission.id,
+              categoryId: category.id,
+              fileName: driveRes.name,
+              fileSize: file.size,
+              fileType: fileType,
+              mimeType: file.type || "application/octet-stream",
+              driveFileId: driveRes.fileId,
+              driveUrl: driveRes.webViewLink,
+              driveThumbnailUrl: driveRes.thumbnailLink,
+              driveFolderId: targetFolderId || null,
+              status: "SUCCESS",
+            },
+          });
 
-      uploadedResults.push({
-        id: uploadedRecord.id,
-        fileName: uploadedRecord.fileName,
-        fileSize: uploadedRecord.fileSize,
-        fileType: uploadedRecord.fileType,
-        driveUrl: uploadedRecord.driveUrl,
-        driveThumbnailUrl: uploadedRecord.driveThumbnailUrl,
-        isMock: driveRes.isMock,
-      });
+          uploadedResults[fileIndex] = {
+            id: uploadedRecord.id,
+            fileName: uploadedRecord.fileName,
+            fileSize: uploadedRecord.fileSize,
+            fileType: uploadedRecord.fileType,
+            driveUrl: uploadedRecord.driveUrl,
+            driveThumbnailUrl: uploadedRecord.driveThumbnailUrl,
+            isMock: driveRes.isMock,
+          };
+        })
+      );
     }
 
     return NextResponse.json({
