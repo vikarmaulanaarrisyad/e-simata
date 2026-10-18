@@ -104,10 +104,12 @@ export async function getReportData(params: ReportQueryParams) {
           files: true,
         },
       }),
-      prisma.madrasah.findMany({
-        where: { isActive: true },
-        orderBy: { orderIndex: "asc" },
-      }),
+      ((prisma as any).madrasah
+        ? (prisma as any).madrasah.findMany({
+            where: { isActive: true },
+            orderBy: { orderIndex: "asc" },
+          })
+        : Promise.resolve([])),
       prisma.category.findMany({
         where: { isActive: true },
         orderBy: { orderIndex: "asc" },
@@ -124,13 +126,13 @@ export async function getReportData(params: ReportQueryParams) {
     }).format(targetDate);
 
     // 4. Transform data submisi
-    const submissions: ReportSubmissionItem[] = submissionsRaw.map((sub) => {
+    const submissions: ReportSubmissionItem[] = (submissionsRaw as any[]).map((sub: any) => {
       const answers = (sub.answersJson as Record<string, any>) || {};
       const kelas =
         answers.kelas ||
         answers.rombel ||
-        sub.fieldValues.find(
-          (fv) =>
+        sub.fieldValues?.find(
+          (fv: any) =>
             fv.fieldLabel?.toLowerCase().includes("kelas") ||
             fv.fieldName?.toLowerCase().includes("kelas")
         )?.value ||
@@ -145,20 +147,20 @@ export async function getReportData(params: ReportQueryParams) {
       return {
         id: sub.id,
         categoryId: sub.categoryId,
-        categoryName: sub.category.name,
+        categoryName: sub.category?.name || "Kategori",
         madrasah: sub.madrasah || "MI Bustanul Huda 01",
         kelas,
         submitterName: sub.submitterName || "Wali Kelas",
         submitterContact: sub.submitterContact,
         notes: sub.notes,
-        createdAt: sub.createdAt.toISOString(),
+        createdAt: sub.createdAt ? new Date(sub.createdAt).toISOString() : new Date().toISOString(),
         timeFormatted: `${timeFormatted} WIB`,
         dateFormatted,
-        fieldValues: sub.fieldValues.map((fv) => ({
-          label: fv.fieldLabel || fv.fieldName || fv.field.label,
+        fieldValues: (sub.fieldValues || []).map((fv: any) => ({
+          label: fv.fieldLabel || fv.fieldName || fv.field?.label || "",
           value: fv.value,
         })),
-        files: sub.files.map((f) => ({
+        files: (sub.files || []).map((f: any) => ({
           id: f.id,
           fileName: f.fileName,
           fileSize: f.fileSize,
