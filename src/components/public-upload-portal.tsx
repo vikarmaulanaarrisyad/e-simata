@@ -1049,7 +1049,7 @@ export function PublicUploadPortal({
                         </Label>
                         <Input
                           id="submitter-name"
-                          placeholder="Contoh: Ustadzah Siti Aminah, S.Pd."
+                          placeholder="Contoh:Vikar Maulana Arrisyad, A.Md.T."
                           value={submitterName}
                           onChange={(e) => setSubmitterName(e.target.value)}
                           disabled={isUploading}
