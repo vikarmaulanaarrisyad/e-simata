@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { Sparkles, RotateCcw } from "lucide-react";
+import { Sparkles, RotateCcw, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { generatePedagogicalNote } from "@/lib/ai-generator";
 
@@ -300,27 +300,84 @@ export function DynamicFormRenderer({
                 )}
 
                 {/* SELECT / DROPDOWN INPUT */}
-                {field.fieldType === FieldType.SELECT && (
-                  <Select
-                    value={value}
-                    disabled={disabled}
-                    onValueChange={(val) => onChange(field.name, val)}
-                  >
-                    <SelectTrigger
-                      id={`field-${field.id}`}
-                      className={cn(error && "border-red-500 focus:ring-red-500")}
+                {field.fieldType === FieldType.SELECT && (() => {
+                  const optionsList = parseOptions(field.options);
+                  const isClassOrRombel =
+                    field.name.toLowerCase().includes("kelas") ||
+                    field.label.toLowerCase().includes("kelas") ||
+                    field.name.toLowerCase().includes("rombel") ||
+                    (optionsList.length > 0 && optionsList.every((o) => o.toLowerCase().includes("kelas") || /^\d+\s*[a-z]$/i.test(o.trim())));
+
+                  if (isClassOrRombel && optionsList.length > 0) {
+                    return (
+                      <div className="space-y-2 pt-1">
+                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                          {optionsList.map((opt) => {
+                            const isSelected = value === opt;
+                            const displayLabel = opt.replace(/kelas\s*/i, "").trim();
+                            return (
+                              <button
+                                key={opt}
+                                type="button"
+                                disabled={disabled}
+                                onClick={() => onChange(field.name, opt)}
+                                className={`px-2 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center border-2 cursor-pointer select-none active:scale-95 ${
+                                  isSelected
+                                    ? "border-emerald-600 bg-emerald-600 text-white shadow-md shadow-emerald-600/25 scale-[1.02] ring-2 ring-emerald-500/30"
+                                    : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-emerald-300 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20"
+                                }`}
+                              >
+                                <span className={`text-[10px] uppercase tracking-wider font-semibold ${isSelected ? "text-emerald-100" : "text-muted-foreground"}`}>
+                                  Kelas
+                                </span>
+                                <span className="text-xs sm:text-sm font-black">
+                                  {displayLabel}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {value && (
+                          <div className="flex items-center justify-between text-[11px] text-emerald-800 dark:text-emerald-300 font-semibold px-1">
+                            <span className="flex items-center gap-1">
+                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                              Terpilih: <strong>{value}</strong>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => onChange(field.name, "")}
+                              className="text-[10px] text-muted-foreground hover:text-red-500 underline cursor-pointer"
+                            >
+                              Ganti
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <Select
+                      value={value}
+                      disabled={disabled}
+                      onValueChange={(val) => onChange(field.name, val)}
                     >
-                      <SelectValue placeholder={field.placeholder || `-- Pilih ${field.label} --`} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {parseOptions(field.options).map((opt, idx) => (
-                        <SelectItem key={idx} value={opt}>
-                          {opt}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
+                      <SelectTrigger
+                        id={`field-${field.id}`}
+                        className={cn("h-11 rounded-xl text-xs sm:text-sm bg-white dark:bg-slate-900", error && "border-red-500 focus:ring-red-500")}
+                      >
+                        <SelectValue placeholder={field.placeholder || `-- Pilih ${field.label} --`} />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        {optionsList.map((opt, idx) => (
+                          <SelectItem key={idx} value={opt} className="text-xs sm:text-sm">
+                            {opt}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  );
+                })()}
 
                 {field.helpText && (
                   <p className="text-xs text-muted-foreground">{field.helpText}</p>

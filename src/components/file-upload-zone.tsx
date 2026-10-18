@@ -171,7 +171,7 @@ export function FileUploadZone({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => !disabled && fileInputRef.current?.click()}
-        className={`relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 sm:p-7 text-center transition-all cursor-pointer ${
+        className={`relative flex flex-col items-center justify-center rounded-2xl sm:rounded-3xl border-2 border-dashed p-4 sm:p-7 text-center transition-all cursor-pointer ${
           isDragOver
             ? isBlue
               ? "border-sky-500 bg-sky-500/10 scale-[1.01]"
@@ -198,30 +198,30 @@ export function FileUploadZone({
 
         {/* Icon & Animation */}
         <div
-          className={`mb-3 flex h-13 w-13 items-center justify-center rounded-2xl shadow-inner transition-transform group-hover:scale-105 ${
+          className={`mb-2 sm:mb-3 flex h-11 w-11 sm:h-13 sm:w-13 items-center justify-center rounded-xl sm:rounded-2xl shadow-inner transition-transform group-hover:scale-105 ${
             isBlue
               ? "bg-sky-100 text-sky-600 dark:bg-sky-950/70 dark:text-sky-300"
               : "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/70 dark:text-emerald-300"
           }`}
         >
           {targetType === "IMAGE" ? (
-            <Camera className="h-6 w-6 animate-pulse" />
+            <Camera className="h-5 w-5 sm:h-6 sm:w-6 animate-pulse" />
           ) : targetType === "VIDEO" ? (
-            <Film className="h-6 w-6 animate-pulse" />
+            <Film className="h-5 w-5 sm:h-6 sm:w-6 animate-pulse" />
           ) : (
-            <UploadCloud className="h-6 w-6 animate-bounce" />
+            <UploadCloud className="h-5 w-5 sm:h-6 sm:w-6 animate-bounce" />
           )}
         </div>
 
-        <h4 className="text-sm sm:text-base font-extrabold text-slate-800 dark:text-slate-100">
+        <h4 className="text-xs sm:text-base font-extrabold text-slate-800 dark:text-slate-100">
           {effectiveTitle}
         </h4>
-        <p className="mt-1 text-xs text-muted-foreground leading-relaxed max-w-sm">
+        <p className="mt-1 text-[11px] sm:text-xs text-muted-foreground leading-relaxed max-w-sm">
           {effectiveDescription}
         </p>
 
         {/* Badges footer */}
-        <div className="mt-3.5 flex flex-wrap items-center justify-center gap-1.5">
+        <div className="mt-2.5 sm:mt-3.5 flex flex-wrap items-center justify-center gap-1 sm:gap-1.5">
           {badgeLabel ? (
             <Badge
               variant="outline"

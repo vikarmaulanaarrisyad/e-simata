@@ -5,12 +5,12 @@ import Swal from "sweetalert2";
  */
 
 const customClass = {
-  popup: "rounded-3xl p-6 sm:p-8 shadow-2xl border border-emerald-100 dark:border-emerald-900 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100",
-  title: "text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight",
-  htmlContainer: "text-sm text-slate-600 dark:text-slate-300 leading-relaxed mt-2",
-  confirmButton: "px-6 py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all active:scale-95 cursor-pointer",
-  cancelButton: "px-5 py-2.5 rounded-xl font-bold bg-slate-200 hover:bg-slate-300 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 transition-all cursor-pointer",
-  denyButton: "px-5 py-2.5 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white transition-all cursor-pointer",
+  popup: "rounded-2xl sm:rounded-3xl p-4 sm:p-7 max-w-[92vw] sm:max-w-md shadow-2xl border border-emerald-100 dark:border-emerald-900 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100",
+  title: "text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white tracking-tight",
+  htmlContainer: "text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed mt-1.5",
+  confirmButton: "w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all active:scale-95 cursor-pointer",
+  cancelButton: "w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-slate-200 hover:bg-slate-300 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 transition-all cursor-pointer",
+  denyButton: "w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-amber-500 hover:bg-amber-600 text-white transition-all cursor-pointer",
 };
 
 /**
