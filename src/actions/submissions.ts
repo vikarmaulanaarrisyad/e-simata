@@ -74,6 +74,7 @@ export async function getSubmissions(params?: {
         { submitterName: { contains: q, mode: "insensitive" } },
         { submitterContact: { contains: q, mode: "insensitive" } },
         { notes: { contains: q, mode: "insensitive" } },
+        { madrasah: { contains: q, mode: "insensitive" } },
       ];
     }
 
@@ -135,3 +136,142 @@ export async function deleteSubmission(id: string) {
     return { success: false, error: error.message };
   }
 }
+
+/**
+ * Pengecekan data ganda:
+ * Memastikan tidak ada pengiriman ganda pada kategori, madrasah, dan kelas yang sama pada tanggal hari ini (WIB).
+ */
+export async function checkDuplicateSubmission(params: {
+  categoryId: string;
+  madrasah?: string | null;
+  kelas?: string | null;
+  date?: string | Date;
+}) {
+  try {
+    const { categoryId, madrasah, kelas, date } = params;
+    if (!categoryId || !kelas || kelas.trim() === "") {
+      return { success: true, isDuplicate: false };
+    }
+
+    // 1. Tentukan rentang waktu 00:00:00 s.d. 23:59:59 WIB (Asia/Jakarta, UTC+7)
+    const targetDate = date ? new Date(date) : new Date();
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jakarta",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const parts = formatter.formatToParts(targetDate);
+    const year = parts.find((p) => p.type === "year")!.value;
+    const month = parts.find((p) => p.type === "month")!.value;
+    const day = parts.find((p) => p.type === "day")!.value;
+
+    const startOfDayWIB = new Date(`${year}-${month}-${day}T00:00:00+07:00`);
+    const endOfDayWIB = new Date(`${year}-${month}-${day}T23:59:59.999+07:00`);
+
+    // 2. Normalisasi kelas (misal: "Kelas 1 A" -> "1a", "1 a" -> "1a")
+    const normalizeClass = (c: string) =>
+      c.toLowerCase().replace(/kelas/g, "").replace(/rombel/g, "").replace(/[^a-z0-9]/g, "");
+
+    const targetClassNorm = normalizeClass(kelas);
+
+    // 3. Normalisasi madrasah (membedakan MI 01 dan MI 02)
+    const normalizeMadrasah = (m?: string | null) => {
+      if (!m) return "";
+      const s = m.toLowerCase();
+      if (s.includes("01") || s.includes("1")) return "mi01";
+      if (s.includes("02") || s.includes("2")) return "mi02";
+      return s.replace(/[^a-z0-9]/g, "");
+    };
+    const targetMadrasahNorm = normalizeMadrasah(madrasah);
+
+    // 4. Cari submisi pada kategori dan rentang tanggal hari ini
+    const submissions = await prisma.submission.findMany({
+      where: {
+        categoryId,
+        createdAt: {
+          gte: startOfDayWIB,
+          lte: endOfDayWIB,
+        },
+      },
+      include: {
+        category: { select: { name: true } },
+        fieldValues: true,
+        files: { select: { id: true, fileName: true, fileType: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    for (const sub of submissions) {
+      // Periksa apakah madrasah cocok
+      const subMadrasahNorm = normalizeMadrasah(sub.madrasah);
+      if (targetMadrasahNorm && subMadrasahNorm && targetMadrasahNorm !== subMadrasahNorm) {
+        continue;
+      }
+
+      // Cari nilai kelas dari answersJson atau fieldValues
+      let subClassVal: string | null = null;
+      if (sub.answersJson && typeof sub.answersJson === "object") {
+        for (const [k, v] of Object.entries(sub.answersJson as Record<string, any>)) {
+          if (
+            (k.toLowerCase().includes("kelas") || k.toLowerCase().includes("rombel")) &&
+            typeof v === "string"
+          ) {
+            subClassVal = v;
+            break;
+          }
+        }
+      }
+
+      if (!subClassVal) {
+        const classField = sub.fieldValues.find(
+          (fv) =>
+            fv.fieldName?.toLowerCase().includes("kelas") ||
+            fv.fieldLabel?.toLowerCase().includes("kelas")
+        );
+        if (classField) {
+          subClassVal = classField.value;
+        }
+      }
+
+      // Jika kelas sama, tandai sebagai duplikat
+      if (subClassVal && normalizeClass(subClassVal) === targetClassNorm) {
+        const timeFormatted = new Intl.DateTimeFormat("id-ID", {
+          timeZone: "Asia/Jakarta",
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(sub.createdAt);
+
+        const dateFormatted = new Intl.DateTimeFormat("id-ID", {
+          timeZone: "Asia/Jakarta",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        }).format(sub.createdAt);
+
+        return {
+          success: true,
+          isDuplicate: true,
+          existingSubmission: {
+            id: sub.id,
+            submitterName: sub.submitterName || "Wali Kelas",
+            submitterContact: sub.submitterContact,
+            madrasah: sub.madrasah || madrasah || "MI Bustanul Huda 01 Dawuhan",
+            categoryName: sub.category.name,
+            kelas: subClassVal,
+            filesCount: sub.files.length,
+            createdAt: sub.createdAt,
+            timeFormatted: `${timeFormatted} WIB`,
+            dateFormatted,
+          },
+        };
+      }
+    }
+
+    return { success: true, isDuplicate: false };
+  } catch (error: any) {
+    console.error("[checkDuplicateSubmission error]", error);
+    return { success: false, isDuplicate: false, error: error.message };
+  }
+}
+

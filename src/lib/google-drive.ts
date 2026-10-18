@@ -407,8 +407,8 @@ export async function getOrCreateDriveFolder(params: {
 }
 
 /**
- * Menyiapkan hierarki folder bertingkat di Google Drive:
- * Base Folder -> Folder Kategori -> Subfolder Kelas (jika ada) -> Subfolder Submisi [YYYY-MM-DD - Nama Siswa/Pengirim]
+ * Menyiapkan hierarki folder bertingkat di Google Drive sesuai alur SIMATA:
+ * SIMATA ➔ [Nama Madrasah] ➔ [Kategori] ➔ [Tanggal: 19 Oktober 2026] ➔ [Kelas] ➔ File-file
  */
 export async function setupSubmissionFolder(params: {
   categoryName: string;
@@ -417,9 +417,11 @@ export async function setupSubmissionFolder(params: {
   submitterName?: string | null;
   baseFolderId?: string | null;
 }): Promise<{
+  rootFolderId: string;
+  madrasahFolderId: string;
   categoryFolderId: string;
-  madrasahFolderId?: string | null;
-  classFolderId?: string | null;
+  dateFolderId: string;
+  classFolderId: string;
   submissionFolderId: string;
   submissionFolderName: string;
   submissionFolderUrl: string;
@@ -427,68 +429,73 @@ export async function setupSubmissionFolder(params: {
 }> {
   const { categoryName, madrasahName, className, submitterName, baseFolderId } = params;
 
-  // 1. Level 1: Folder Kategori (misal: "SIMATA - Jurnal Syukur")
-  const categoryFolderName = `SIMATA - ${categoryName.trim()}`;
-  const categoryFolder = await getOrCreateDriveFolder({
-    folderName: categoryFolderName,
+  // 1. Root Utama: Folder "SIMATA"
+  const rootFolder = await getOrCreateDriveFolder({
+    folderName: "SIMATA",
     parentFolderId: baseFolderId,
   });
 
-  let currentParentId = categoryFolder.id;
-  let madrasahFolderId: string | null = null;
-  let classFolderId: string | null = null;
-
-  // 2. Level 2: Subfolder Madrasah jika ada (misal: "MI Bustanul Huda 01 Dawuhan")
-  if (madrasahName && madrasahName.trim() !== "") {
-    const cleanMadrasah = madrasahName.trim();
-    const madrasahFolder = await getOrCreateDriveFolder({
-      folderName: cleanMadrasah,
-      parentFolderId: currentParentId,
-    });
-    currentParentId = madrasahFolder.id;
-    madrasahFolderId = madrasahFolder.id;
-  }
-
-  // 3. Level 3: Subfolder Kelas jika ada (misal: "Kelas 1 A", "Kelas 2 B", dst. sampai "Kelas 6 B")
-  if (className && className.trim() !== "") {
-    const cleanClassName = className.trim();
-    const classFolder = await getOrCreateDriveFolder({
-      folderName: cleanClassName,
-      parentFolderId: currentParentId,
-    });
-    currentParentId = classFolder.id;
-    classFolderId = classFolder.id;
-  }
-
-  // 4. Level 4: Subfolder Submisi (misal: "2026-10-18 - Wali Kelas Siti Aminah (14.30)")
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  const dateStr = `${yyyy}-${mm}-${dd}`;
-  const timeStr = `${String(now.getHours()).padStart(2, "0")}.${String(now.getMinutes()).padStart(2, "0")}`;
-  const rawSubmitter = submitterName?.trim();
-  const submitterStr = rawSubmitter
-    ? rawSubmitter.toLowerCase().includes("wali") || rawSubmitter.toLowerCase().includes("guru") || rawSubmitter.toLowerCase().includes("ustadz")
-      ? rawSubmitter
-      : `Wali Kelas ${rawSubmitter}`
-    : "Wali Kelas";
-  const submissionFolderName = `${dateStr} - ${submitterStr} (${timeStr})`;
-
-  const submissionFolder = await getOrCreateDriveFolder({
-    folderName: submissionFolderName,
-    parentFolderId: currentParentId,
+  // 2. Subfolder Level 1: [Nama Madrasah] (misal: "MI Bustanul Huda 01 Dawuhan")
+  const cleanMadrasah =
+    madrasahName && madrasahName.trim() !== ""
+      ? madrasahName.trim()
+      : "MI Bustanul Huda 01 Dawuhan";
+  const madrasahFolder = await getOrCreateDriveFolder({
+    folderName: cleanMadrasah,
+    parentFolderId: rootFolder.id,
   });
 
+  // 3. Subfolder Level 2: [Kategori] (misal: "Jurnal Syukur")
+  const cleanCategory = categoryName.trim();
+  const categoryFolder = await getOrCreateDriveFolder({
+    folderName: cleanCategory,
+    parentFolderId: madrasahFolder.id,
+  });
+
+  // 4. Subfolder Level 3: [Tanggal] Format Indonesia (misal: "19 Oktober 2026")
+  const now = new Date();
+  const MONTHS_ID = [
+    "Januari",
+    "Februari",
+    "Maret",
+    "April",
+    "Mei",
+    "Juni",
+    "Juli",
+    "Agustus",
+    "September",
+    "Oktober",
+    "November",
+    "Desember",
+  ];
+  const dateFolderName = `${now.getDate()} ${MONTHS_ID[now.getMonth()]} ${now.getFullYear()}`;
+  const dateFolder = await getOrCreateDriveFolder({
+    folderName: dateFolderName,
+    parentFolderId: categoryFolder.id,
+  });
+
+  // 5. Subfolder Level 4: [Kelas] (misal: "Kelas 1 A" atau "kelas 1 a")
+  const cleanClass = className && className.trim() !== "" ? className.trim() : "Semua Kelas";
+  const classFolder = await getOrCreateDriveFolder({
+    folderName: cleanClass,
+    parentFolderId: dateFolder.id,
+  });
+
+  // File-file submisi langsung masuk dan diarsipkan ke dalam subfolder kelas ini!
+  const submissionFolderName = `SIMATA / ${cleanMadrasah} / ${cleanCategory} / ${dateFolderName} / ${cleanClass}`;
+  const submissionFolderUrl =
+    classFolder.webViewLink ||
+    `https://drive.google.com/drive/folders/${classFolder.id}`;
+
   return {
+    rootFolderId: rootFolder.id,
+    madrasahFolderId: madrasahFolder.id,
     categoryFolderId: categoryFolder.id,
-    madrasahFolderId,
-    classFolderId,
-    submissionFolderId: submissionFolder.id,
+    dateFolderId: dateFolder.id,
+    classFolderId: classFolder.id,
+    submissionFolderId: classFolder.id,
     submissionFolderName,
-    submissionFolderUrl:
-      submissionFolder.webViewLink ||
-      `https://drive.google.com/drive/folders/${submissionFolder.id}`,
-    isMock: submissionFolder.isMock,
+    submissionFolderUrl,
+    isMock: classFolder.isMock,
   };
 }

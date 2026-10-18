@@ -5,6 +5,7 @@ import {
   setupSubmissionFolder,
   sanitizeFileName,
 } from "@/lib/google-drive";
+import { checkDuplicateSubmission } from "@/actions/submissions";
 
 export const maxDuration = 60; // Allow sufficient time for multiple large file uploads
 
@@ -15,8 +16,10 @@ export async function POST(req: NextRequest) {
     const categoryId = formData.get("categoryId") as string;
     const submitterName = (formData.get("submitterName") as string) || null;
     const submitterContact = (formData.get("submitterContact") as string) || null;
-    const notes = (formData.get("notes") as string) || null;
+    let notes = (formData.get("notes") as string) || null;
+    const madrasah = (formData.get("madrasah") as string) || (formData.get("nama_madrasah") as string) || null;
     const fieldsDataRaw = (formData.get("fieldsData") as string) || "{}";
+    const allowSupplementary = formData.get("allowSupplementary") === "true";
 
     if (!categoryId) {
       return NextResponse.json(
@@ -82,37 +85,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. Buat record Submission di database terlebih dahulu
-    const submission = await prisma.submission.create({
-      data: {
-        categoryId: category.id,
-        submitterName,
-        submitterContact,
-        notes,
-        answersJson: fieldsData,
-      },
-    });
-
-    // 5. Simpan isian FieldValue
-    const fieldValuePromises = category.fields.map((field) => {
-      const val = fieldsData[field.name];
-      if (val !== undefined && val !== null && val !== "") {
-        const strVal = typeof val === "object" ? JSON.stringify(val) : String(val);
-        return prisma.fieldValue.create({
-          data: {
-            submissionId: submission.id,
-            fieldId: field.id,
-            fieldName: field.name,
-            fieldLabel: field.label,
-            value: strVal,
-          },
-        });
-      }
-      return Promise.resolve(null);
-    });
-    await Promise.all(fieldValuePromises);
-
-    // 6. Deteksi pilihan kelas jika formulir menyertakan field Kelas / Rombel
+    // 3b. Deteksi pilihan kelas terlebih dahulu untuk verifikasi data ganda
     let selectedClass: string | null = null;
     const directClass = formData.get("className") || formData.get("kelas") || formData.get("class");
     if (directClass && typeof directClass === "string" && directClass.trim() !== "") {
@@ -142,11 +115,69 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 3c. Cek data ganda: Cegah pengiriman berulang pada hari/tanggal yang sama
+    if (selectedClass && !allowSupplementary) {
+      const dupCheck = await checkDuplicateSubmission({
+        categoryId: category.id,
+        madrasah,
+        kelas: selectedClass,
+      });
+
+      if (dupCheck.success && dupCheck.isDuplicate && dupCheck.existingSubmission) {
+        const ex = dupCheck.existingSubmission;
+        return NextResponse.json(
+          {
+            success: false,
+            isDuplicate: true,
+            error: `Pengiriman dicegah: ${ex.kelas} di ${ex.madrasah} sudah tercatat mengisi ${ex.categoryName} pada hari ini (${ex.dateFormatted}) pukul ${ex.timeFormatted} oleh ${ex.submitterName}.`,
+            existingSubmission: ex,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    if (allowSupplementary) {
+      notes = notes ? `${notes} [Berkas Susulan]` : "[Berkas Susulan]";
+    }
+
+    // 4. Buat record Submission di database terlebih dahulu
+    const submission = await prisma.submission.create({
+      data: {
+        categoryId: category.id,
+        madrasah,
+        submitterName,
+        submitterContact,
+        notes,
+        answersJson: fieldsData,
+      },
+    });
+
+    // 5. Simpan isian FieldValue
+    const fieldValuePromises = category.fields.map((field) => {
+      const val = fieldsData[field.name];
+      if (val !== undefined && val !== null && val !== "") {
+        const strVal = typeof val === "object" ? JSON.stringify(val) : String(val);
+        return prisma.fieldValue.create({
+          data: {
+            submissionId: submission.id,
+            fieldId: field.id,
+            fieldName: field.name,
+            fieldLabel: field.label,
+            value: strVal,
+          },
+        });
+      }
+      return Promise.resolve(null);
+    });
+    await Promise.all(fieldValuePromises);
+
     // 7. Siapkan hierarki folder bertingkat di Google Drive:
     // [Kategori] ➔ [Kelas] (jika ada) ➔ [Subfolder Submisi]
     const baseFolderId = category.driveFolderId || process.env.GOOGLE_DRIVE_FOLDER_ID || null;
     const folderStructure = await setupSubmissionFolder({
       categoryName: category.name,
+      madrasahName: madrasah,
       className: selectedClass,
       submitterName,
       baseFolderId,
@@ -169,6 +200,7 @@ export async function POST(req: NextRequest) {
       const cleanFileName = sanitizeFileName({
         originalName: file.name,
         categoryName: category.name,
+        madrasahName: madrasah,
         className: selectedClass,
         submitterName,
         index: i,

@@ -42,6 +42,7 @@ import { toast } from "sonner";
 interface SubmissionItem {
   id: string;
   categoryId: string;
+  madrasah?: string | null;
   submitterName: string | null;
   submitterContact: string | null;
   notes: string | null;
@@ -99,6 +100,7 @@ export function SubmissionsExplorer({
       !q ||
       item.submitterName?.toLowerCase().includes(q) ||
       item.submitterContact?.toLowerCase().includes(q) ||
+      item.madrasah?.toLowerCase().includes(q) ||
       item.category.name.toLowerCase().includes(q) ||
       item.files.some((f) => f.fileName.toLowerCase().includes(q)) ||
       item.fieldValues.some((fv) => fv.value.toLowerCase().includes(q));
@@ -193,6 +195,11 @@ export function SubmissionsExplorer({
                     <Badge variant="default" className="text-xs">
                       {sub.category.name}
                     </Badge>
+                    {sub.madrasah && (
+                      <Badge variant="outline" className="text-xs border-teal-300 text-teal-800 dark:border-teal-700 dark:text-teal-300 bg-teal-50/70 dark:bg-teal-950/40 font-semibold gap-1">
+                        🏫 {sub.madrasah}
+                      </Badge>
+                    )}
                     <span className="text-xs text-muted-foreground flex items-center gap-1">
                       <Clock className="h-3 w-3" /> {formatDate(sub.createdAt)}
                     </span>
@@ -313,6 +320,12 @@ export function SubmissionsExplorer({
                   <span className="text-muted-foreground block text-[11px]">Nama Wali Kelas / Guru:</span>
                   <span className="font-bold text-sm text-slate-800 dark:text-slate-100">
                     {activeSubmission.submitterName || "Belum Mengisi"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Asal Madrasah:</span>
+                  <span className="font-bold text-sm text-teal-800 dark:text-teal-300">
+                    {activeSubmission.madrasah || "MI Bustanul Huda 01 Dawuhan"}
                   </span>
                 </div>
                 <div>

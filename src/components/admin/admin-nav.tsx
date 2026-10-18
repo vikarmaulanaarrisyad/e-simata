@@ -15,9 +15,7 @@ import {
   ChevronRight,
   Sparkles,
   CalendarDays,
-  UserCheck,
-  CheckCircle2,
-  AlertTriangle,
+  LogOut,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +27,8 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { logoutAdminAction } from "@/lib/auth";
+import { showSwalConfirm, showSwalLoading } from "@/lib/swal";
 
 interface DriveStatus {
   connected: boolean;
@@ -72,6 +72,23 @@ export function AdminSidebar({ driveStatus }: { driveStatus: DriveStatus }) {
   const isItemActive = (href: string, exact: boolean) => {
     if (exact) return pathname === href;
     return pathname.startsWith(href);
+  };
+
+  const handleLogout = async () => {
+    const confirmed = await showSwalConfirm(
+      "Konfirmasi Keluar",
+      "Apakah Anda yakin ingin keluar dari panel admin SIMATA?",
+      "Ya, Keluar"
+    );
+
+    if (confirmed) {
+      showSwalLoading({
+        title: "Sedang Keluar...",
+        stepText: "Menghapus sesi otentikasi admin...",
+        progressPercent: 90,
+      });
+      await logoutAdminAction();
+    }
   };
 
   return (
@@ -173,7 +190,7 @@ export function AdminSidebar({ driveStatus }: { driveStatus: DriveStatus }) {
         </div>
       </div>
 
-      {/* Bottom Profile & Public Shortcut */}
+      {/* Bottom Profile & Public Shortcut & Logout */}
       <div className="p-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
         {/* Shortcut to Public Portal */}
         <Link
@@ -188,17 +205,33 @@ export function AdminSidebar({ driveStatus }: { driveStatus: DriveStatus }) {
           <ExternalLink className="h-3.5 w-3.5 text-emerald-600" />
         </Link>
 
-        {/* Admin User Chip */}
-        <div className="flex items-center gap-3 px-2 py-1">
-          <div className="h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 font-bold text-xs border border-slate-200">
-            AD
+        {/* Admin User Chip with Logout Button */}
+        <div className="flex items-center justify-between p-2 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-800">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="h-8 w-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 flex items-center justify-center text-white font-black text-xs shadow-sm shrink-0">
+              AD
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate leading-tight">
+                Admin SIMATA
+              </p>
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Terautentikasi
+              </span>
+            </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-              Administrator SIMATA
-            </p>
-            <p className="text-[10px] text-muted-foreground">Admin Madrasah</p>
-          </div>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={handleLogout}
+            title="Keluar / Logout"
+            className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition-colors cursor-pointer shrink-0"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
         </div>
       </div>
     </aside>
@@ -233,6 +266,23 @@ export function AdminHeader({ driveStatus }: { driveStatus: DriveStatus }) {
     );
   }, []);
 
+  const handleLogout = async () => {
+    const confirmed = await showSwalConfirm(
+      "Konfirmasi Keluar",
+      "Apakah Anda yakin ingin keluar dari panel admin SIMATA?",
+      "Ya, Keluar"
+    );
+
+    if (confirmed) {
+      showSwalLoading({
+        title: "Sedang Keluar...",
+        stepText: "Menghapus sesi otentikasi admin...",
+        progressPercent: 90,
+      });
+      await logoutAdminAction();
+    }
+  };
+
   return (
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 sm:px-8 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/80 shadow-[0_1px_4px_rgba(0,0,0,0.02)]">
       {/* Left: Mobile Toggle & Breadcrumbs */}
@@ -244,47 +294,61 @@ export function AdminHeader({ driveStatus }: { driveStatus: DriveStatus }) {
               <Menu className="h-5 w-5" />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="p-0 w-72">
-            <SheetHeader className="p-5 border-b border-slate-100 dark:border-slate-800 text-left">
-              <SheetTitle className="flex items-center gap-2 text-base font-extrabold text-emerald-800 dark:text-emerald-400">
-                <ShieldCheck className="h-5 w-5" /> SIMATA Admin
-              </SheetTitle>
-            </SheetHeader>
-            <div className="p-4 space-y-2" onClick={() => setMobileOpen(false)}>
-              <Link
-                href="/admin"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-50 text-slate-700"
-              >
-                <LayoutDashboard className="h-4 w-4 text-emerald-600" /> Ringkasan Dashboard
-              </Link>
-              <Link
-                href="/admin/categories"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-50 text-slate-700"
-              >
-                <FolderTree className="h-4 w-4 text-emerald-600" /> Kategori & Form Builder
-              </Link>
-              <Link
-                href="/admin/submissions"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-50 text-slate-700"
-              >
-                <FileCheck2 className="h-4 w-4 text-emerald-600" /> Submisi & Berkas Masuk
-              </Link>
-              <Link
-                href="/admin/settings"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-50 text-slate-700"
-              >
-                <Settings className="h-4 w-4 text-emerald-600" /> Koneksi Google Drive
-              </Link>
-              <div className="pt-4 border-t border-slate-100">
+          <SheetContent side="left" className="p-0 w-72 flex flex-col justify-between">
+            <div>
+              <SheetHeader className="p-5 border-b border-slate-100 dark:border-slate-800 text-left">
+                <SheetTitle className="flex items-center gap-2 text-base font-extrabold text-emerald-800 dark:text-emerald-400">
+                  <ShieldCheck className="h-5 w-5" /> SIMATA Admin
+                </SheetTitle>
+              </SheetHeader>
+              <div className="p-4 space-y-2" onClick={() => setMobileOpen(false)}>
                 <Link
-                  href="/"
-                  target="_blank"
-                  className="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700"
+                  href="/admin"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-50 text-slate-700"
                 >
-                  <span>Form Publik</span>
-                  <ExternalLink className="h-3.5 w-3.5" />
+                  <LayoutDashboard className="h-4 w-4 text-emerald-600" /> Ringkasan Dashboard
                 </Link>
+                <Link
+                  href="/admin/categories"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-50 text-slate-700"
+                >
+                  <FolderTree className="h-4 w-4 text-emerald-600" /> Kategori & Form Builder
+                </Link>
+                <Link
+                  href="/admin/submissions"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-50 text-slate-700"
+                >
+                  <FileCheck2 className="h-4 w-4 text-emerald-600" /> Submisi & Berkas Masuk
+                </Link>
+                <Link
+                  href="/admin/settings"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-50 text-slate-700"
+                >
+                  <Settings className="h-4 w-4 text-emerald-600" /> Koneksi Google Drive
+                </Link>
+                <div className="pt-4 border-t border-slate-100">
+                  <Link
+                    href="/"
+                    target="_blank"
+                    className="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700"
+                  >
+                    <span>Form Publik</span>
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
               </div>
+            </div>
+
+            {/* Mobile Drawer Logout footer */}
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800">
+              <Button
+                variant="destructive"
+                className="w-full gap-2 rounded-xl text-xs font-bold"
+                onClick={handleLogout}
+              >
+                <LogOut className="h-4 w-4" />
+                <span>Keluar dari Panel Admin</span>
+              </Button>
             </div>
           </SheetContent>
         </Sheet>
@@ -305,7 +369,7 @@ export function AdminHeader({ driveStatus }: { driveStatus: DriveStatus }) {
       </div>
 
       {/* Right: Date pill & Quick Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5 sm:gap-3">
         <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100/80 dark:bg-slate-800/60 text-xs font-semibold text-slate-600 dark:text-slate-300">
           <CalendarDays className="h-3.5 w-3.5 text-emerald-600" />
           <span suppressHydrationWarning>{todayStr}</span>
@@ -321,6 +385,18 @@ export function AdminHeader({ driveStatus }: { driveStatus: DriveStatus }) {
             <span className="hidden sm:inline">Lihat</span> Form Publik
           </Button>
         </Link>
+
+        {/* Desktop Logout Button */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleLogout}
+          title="Keluar / Logout"
+          className="gap-1.5 text-xs font-bold text-slate-600 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition-colors cursor-pointer"
+        >
+          <LogOut className="h-3.5 w-3.5 text-red-500" />
+          <span className="hidden md:inline">Keluar</span>
+        </Button>
       </div>
     </header>
   );
