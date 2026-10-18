@@ -27,6 +27,7 @@ import {
   Calendar,
   School,
   Film,
+  Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -118,6 +119,8 @@ function getCategoryDayInfo(cat: CategoryWithFields) {
   };
 }
 
+const DRAFT_STORAGE_KEY = "simata_public_form_draft_v1";
+
 export function PublicUploadPortal({
   categories,
   madrasahs = [],
@@ -139,11 +142,14 @@ export function PublicUploadPortal({
     categories[0]?.id || ""
   );
 
-  // Auto-day detection state
+  // Auto-day detection state & Draft Persistence
   const [todayDayIndex, setTodayDayIndex] = useState<number | null>(null);
   const [todayDateFormatted, setTodayDateFormatted] = useState<string>("");
   const [todaySimpleDate, setTodaySimpleDate] = useState<string>("");
   const [showAllDays, setShowAllDays] = useState(false);
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const [isDraftLoaded, setIsDraftLoaded] = useState(false);
 
   useEffect(() => {
     const now = new Date();
@@ -164,6 +170,47 @@ export function PublicUploadPortal({
         year: "numeric",
       })
     );
+
+    // Pulihkan draf isian formulir dari localStorage jika ada
+    try {
+      const savedRaw = localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (savedRaw) {
+        const saved = JSON.parse(savedRaw);
+        const hasContent =
+          Boolean(saved.submitterName?.trim()) ||
+          Boolean(saved.submitterContact?.trim()) ||
+          Boolean(saved.notes?.trim()) ||
+          (saved.fieldAnswers && Object.keys(saved.fieldAnswers).length > 0);
+
+        if (hasContent) {
+          if (saved.selectedMadrasah) setSelectedMadrasah(saved.selectedMadrasah);
+          if (saved.selectedCategoryId) setSelectedCategoryId(saved.selectedCategoryId);
+          if (saved.submitterName) setSubmitterName(saved.submitterName);
+          if (saved.submitterContact) setSubmitterContact(saved.submitterContact);
+          if (saved.activityDate) setActivityDate(saved.activityDate);
+          if (saved.notes) setNotes(saved.notes);
+          if (saved.fieldAnswers && typeof saved.fieldAnswers === "object") {
+            setFieldAnswers(saved.fieldAnswers);
+          }
+          setHasRestoredDraft(true);
+          if (saved.savedAt) {
+            const dateObj = new Date(saved.savedAt);
+            if (!isNaN(dateObj.getTime())) {
+              setDraftSavedAt(
+                dateObj.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+              );
+            }
+          }
+          toast.info("Draf isian sebelumnya dipulihkan otomatis. Isian Anda tetap aman! ✨", {
+            duration: 4000,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn("[Draft Restore Warning]", e);
+    } finally {
+      setIsDraftLoaded(true);
+    }
   }, []);
 
   // Category matching today's schedule (1=Senin, 2=Selasa, 3=Rabu, 4=Kamis)
@@ -173,12 +220,12 @@ export function PublicUploadPortal({
     return info.dayIndex === todayDayIndex;
   });
 
-  // Automatically select today's category on load or when locking back to today
+  // Automatically select today's category on load or when locking back to today (hanya jika belum memulihkan draf kategori lain)
   useEffect(() => {
-    if (todayCategory && !showAllDays) {
+    if (todayCategory && !showAllDays && !hasRestoredDraft && isDraftLoaded) {
       setSelectedCategoryId(todayCategory.id);
     }
-  }, [todayCategory, showAllDays]);
+  }, [todayCategory, showAllDays, hasRestoredDraft, isDraftLoaded]);
 
   // Categories displayed in the UI:
   // If showAllDays is false AND today's category exists: show ONLY today's category!
@@ -297,6 +344,78 @@ export function PublicUploadPortal({
       active = false;
     };
   }, [selectedCategory?.id, selectedMadrasah, currentClassValue, activityDate]);
+
+  // Simpan otomatis draf isian ke localStorage setiap ada perubahan (debounced 400ms)
+  useEffect(() => {
+    if (!isDraftLoaded || isUploading || submissionResult) return;
+
+    const hasContent =
+      Boolean(submitterName.trim()) ||
+      Boolean(submitterContact.trim()) ||
+      Boolean(notes.trim()) ||
+      Object.keys(fieldAnswers).length > 0;
+
+    if (!hasContent) {
+      try {
+        localStorage.removeItem(DRAFT_STORAGE_KEY);
+      } catch {}
+      setDraftSavedAt(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      try {
+        const draftData = {
+          selectedMadrasah,
+          selectedCategoryId,
+          submitterName,
+          submitterContact,
+          activityDate,
+          notes,
+          fieldAnswers,
+          savedAt: new Date().toISOString(),
+        };
+        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
+        const now = new Date();
+        setDraftSavedAt(
+          now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+        );
+      } catch {}
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [
+    isDraftLoaded,
+    selectedMadrasah,
+    selectedCategoryId,
+    submitterName,
+    submitterContact,
+    activityDate,
+    notes,
+    fieldAnswers,
+    isUploading,
+    submissionResult,
+  ]);
+
+  // Cegah keluar atau me-refresh halaman tanpa sengaja jika sedang mengisi formulir atau memilih berkas
+  useEffect(() => {
+    const isFormDirty =
+      selectedFiles.length > 0 ||
+      Boolean(submitterName.trim()) ||
+      Boolean(notes.trim()) ||
+      Object.values(fieldAnswers).some((v) => Boolean(v && String(v).trim()));
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isFormDirty && !isUploading && !submissionResult) {
+        e.preventDefault();
+        e.returnValue = "";
+        return "";
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [selectedFiles.length, submitterName, notes, fieldAnswers, isUploading, submissionResult]);
 
   const getCategoryIcon = (iconName: string | null) => {
     switch (iconName) {
@@ -480,6 +599,13 @@ export function PublicUploadPortal({
           setSubmissionResult(result);
           closeSwal();
 
+          // Bersihkan draf otomatis dari penyimpanan HP setelah sukses terkirim
+          try {
+            localStorage.removeItem(DRAFT_STORAGE_KEY);
+          } catch {}
+          setHasRestoredDraft(false);
+          setDraftSavedAt(null);
+
           const breakdown = [];
           if (photoFiles.length > 0) breakdown.push(`${photoFiles.length} foto`);
           if (videoFiles.length > 0) breakdown.push(`${videoFiles.length} video`);
@@ -521,6 +647,11 @@ export function PublicUploadPortal({
   };
 
   const handleResetForm = () => {
+    try {
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch {}
+    setHasRestoredDraft(false);
+    setDraftSavedAt(null);
     setSubmissionResult(null);
     setFieldAnswers({});
     setFieldErrors({});
@@ -533,6 +664,18 @@ export function PublicUploadPortal({
     setSelectedMadrasah(availableMadrasahs[0]?.name || "MI Bustanul Huda 01");
     setDuplicateInfo(null);
     setAllowSupplementary(false);
+  };
+
+  const handleDiscardDraft = async () => {
+    const confirmed = await showSwalConfirm(
+      "Bersihkan Draf Formulir?",
+      "Seluruh isian formulir yang tersimpan sementara di HP ini akan dibersihkan dan dimulai dari awal.",
+      "Ya, Bersihkan Draf"
+    );
+    if (!confirmed) return;
+
+    handleResetForm();
+    toast.success("Draf isian berhasil dibersihkan.");
   };
 
   const totalSelectedFileSize = selectedFiles.reduce(
@@ -749,6 +892,43 @@ export function PublicUploadPortal({
         ) : (
           /* Form Upload Wizard */
           <form onSubmit={handleSubmit} className="space-y-6 sm:space-y-10">
+            {/* Indikator Penyimpanan Draf Otomatis di HP Guru */}
+            {((hasRestoredDraft && !submissionResult) || draftSavedAt) && (
+              <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/10 border border-emerald-500/20 text-emerald-950 dark:text-emerald-100 flex flex-col xs:flex-row items-start xs:items-center justify-between gap-3 shadow-sm backdrop-blur-sm animate-in fade-in-50">
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                  <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                    <Save className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-xs sm:text-sm font-bold text-emerald-900 dark:text-emerald-100">
+                        {hasRestoredDraft ? "Draf Isian Dipulihkan Otomatis" : "Draf Tersimpan Aman"}
+                      </p>
+                      {draftSavedAt && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300">
+                          Tersimpan {draftSavedAt} WIB
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-emerald-800/80 dark:text-emerald-300/80 leading-snug mt-0.5">
+                      Isian formulir otomatis tersimpan di HP Anda. Jika ter-refresh atau keluar, data Anda tidak akan hilang.
+                    </p>
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDiscardDraft}
+                  className="w-full xs:w-auto shrink-0 text-xs font-semibold text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl h-8 px-3 cursor-pointer"
+                >
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                  Mulai Ulang
+                </Button>
+              </div>
+            )}
+
             {/* Step 1: Category Selection */}
             <Card className="rounded-2xl sm:rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xl overflow-hidden bg-white dark:bg-slate-900 transition-all">
               <CardHeader className="bg-gradient-to-r from-slate-50 via-emerald-50/30 to-slate-50 dark:from-slate-900/80 dark:via-emerald-950/20 dark:to-slate-900/80 border-b border-border/80 p-3.5 sm:p-5 md:p-6 pb-3 sm:pb-4">
