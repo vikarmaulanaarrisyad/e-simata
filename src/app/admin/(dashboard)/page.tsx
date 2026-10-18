@@ -398,7 +398,12 @@ export default async function AdminDashboardPage() {
                             {formatDate(sub.createdAt)}
                           </span>
                           <span className="text-[10px] text-muted-foreground font-mono">
-                            {d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB
+                            {d.toLocaleTimeString("id-ID", {
+                              timeZone: "Asia/Jakarta",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              hour12: false,
+                            }).replace(":", ".")} WIB
                           </span>
                         </td>
                         <td className="py-3.5 px-6 whitespace-nowrap">

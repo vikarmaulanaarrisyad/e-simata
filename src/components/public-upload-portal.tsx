@@ -154,10 +154,27 @@ export function PublicUploadPortal({
 
   useEffect(() => {
     const now = new Date();
-    const day = now.getDay();
-    setTodayDayIndex(day);
+
+    // Pastikan hari dan tanggal selalu mengikuti waktu resmi WIB (Asia/Jakarta, UTC+7)
+    const weekdayWIB = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Jakarta",
+      weekday: "short",
+    }).format(now);
+    const dayMap: Record<string, number> = {
+      Sun: 0,
+      Mon: 1,
+      Tue: 2,
+      Wed: 3,
+      Thu: 4,
+      Fri: 5,
+      Sat: 6,
+    };
+    const dayIndexWIB = dayMap[weekdayWIB] ?? now.getDay();
+    setTodayDayIndex(dayIndexWIB);
+
     setTodayDateFormatted(
       now.toLocaleDateString("id-ID", {
+        timeZone: "Asia/Jakarta",
         weekday: "long",
         day: "numeric",
         month: "long",
@@ -166,6 +183,7 @@ export function PublicUploadPortal({
     );
     setTodaySimpleDate(
       now.toLocaleDateString("id-ID", {
+        timeZone: "Asia/Jakarta",
         day: "numeric",
         month: "long",
         year: "numeric",
@@ -198,7 +216,12 @@ export function PublicUploadPortal({
             const dateObj = new Date(saved.savedAt);
             if (!isNaN(dateObj.getTime())) {
               setDraftSavedAt(
-                dateObj.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+                dateObj.toLocaleTimeString("id-ID", {
+                  timeZone: "Asia/Jakarta",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                }).replace(":", ".") + " WIB"
               );
             }
           }
@@ -379,7 +402,12 @@ export function PublicUploadPortal({
         localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
         const now = new Date();
         setDraftSavedAt(
-          now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+          now.toLocaleTimeString("id-ID", {
+            timeZone: "Asia/Jakarta",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          }).replace(":", ".") + " WIB"
         );
       } catch {}
     }, 400);

@@ -467,14 +467,18 @@ export function SubmissionsExplorer({
     const rows = submissions.map((item, idx) => {
       const d = new Date(item.createdAt);
       const dateFormatted = d.toLocaleDateString("id-ID", {
+        timeZone: "Asia/Jakarta",
         day: "numeric",
         month: "long",
         year: "numeric",
       });
-      const timeFormatted = d.toLocaleTimeString("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
+      const timeFormatted =
+        d.toLocaleTimeString("id-ID", {
+          timeZone: "Asia/Jakarta",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }).replace(":", ".") + " WIB";
 
       // Extract class
       const kelasVal =
@@ -751,14 +755,18 @@ export function SubmissionsExplorer({
                 submissions.map((item, index) => {
                   const d = new Date(item.createdAt);
                   const dateStr = d.toLocaleDateString("id-ID", {
+                    timeZone: "Asia/Jakarta",
                     day: "numeric",
                     month: "short",
                     year: "numeric",
                   });
-                  const timeStr = d.toLocaleTimeString("id-ID", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  });
+                  const timeStr =
+                    d.toLocaleTimeString("id-ID", {
+                      timeZone: "Asia/Jakarta",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: false,
+                    }).replace(":", ".") + " WIB";
 
                   // Extract class and activity date
                   const kelas =

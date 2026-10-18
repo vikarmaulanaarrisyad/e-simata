@@ -266,6 +266,7 @@ export function AdminHeader({ driveStatus }: { driveStatus: DriveStatus }) {
   React.useEffect(() => {
     setTodayStr(
       new Intl.DateTimeFormat("id-ID", {
+        timeZone: "Asia/Jakarta",
         weekday: "long",
         day: "numeric",
         month: "long",

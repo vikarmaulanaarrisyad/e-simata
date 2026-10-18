@@ -185,11 +185,22 @@ export async function POST(req: NextRequest) {
       ...(selectedClass ? { kelas: selectedClass, rombel: selectedClass } : {}),
     };
 
-    let creationDate = new Date();
+    // Waktu pengiriman menggunakan jam aktual server di zona waktu WIB (Asia/Jakarta)
+    const now = new Date();
+    let creationDate = now;
     if (activityDate) {
       const parts = activityDate.split("-");
       if (parts.length === 3 && parts[0].length === 4) {
-        creationDate = new Date(`${activityDate}T12:00:00+07:00`);
+        // Ambil jam, menit, detik saat ini dalam zona waktu Asia/Jakarta (WIB, UTC+7)
+        const timeWibStr = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Asia/Jakarta",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        }).format(now); // Contoh: "08:15:30"
+
+        creationDate = new Date(`${activityDate}T${timeWibStr}+07:00`);
       }
     }
 
