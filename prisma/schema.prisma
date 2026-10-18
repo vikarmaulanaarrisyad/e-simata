@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum FieldType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  SELECT
+  CHECKBOX
+  DATE
+}
+
+model AdminGoogleAccount {
+  id           String    @id @default("primary")
+  email        String
+  name         String?
+  picture      String?
+  accessToken  String
+  refreshToken String?
+  scope        String?
+  tokenType    String?
+  expiryDate   BigInt?
+  connectedAt  DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("admin_google_accounts")
+}
+
+model Category {
+  id               String        @id @default(cuid())
+  name             String
+  slug             String        @unique
+  description      String?
+  driveFolderId    String?
+  icon             String?       @default("FolderArchive")
+  color            String?       @default("emerald")
+  isActive         Boolean       @default(true)
+  allowedFileTypes String?       @default("image/*,video/*")
+  maxFileSizeMb    Int           @default(50)
+  orderIndex       Int           @default(0)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  fields           CustomField[]
+  submissions      Submission[]
+  files            UploadedFile[]
+
+  @@map("categories")
+}
+
+model CustomField {
+  id          String       @id @default(cuid())
+  categoryId  String
+  category    Category     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  label       String
+  name        String
+  fieldType   FieldType
+  placeholder String?
+  helpText    String?
+  isRequired  Boolean      @default(false)
+  options     Json?        // Array of options for SELECT, e.g. ["Kelas 1", "Kelas 2"]
+  orderIndex  Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  values      FieldValue[]
+
+  @@index([categoryId])
+  @@map("custom_fields")
+}
+
+model Madrasah {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  code       String?
+  isActive   Boolean  @default(true)
+  orderIndex Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("madrasahs")
+}
+
+model Submission {
+  id               String         @id @default(cuid())
+  categoryId       String
+  category         Category       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  madrasah         String?
+  submitterName    String?
+  submitterContact String?
+  notes            String?
+  answersJson      Json?          // Key-value store of answers for fast querying
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  fieldValues      FieldValue[]
+  files            UploadedFile[]
+
+  @@index([categoryId])
+  @@map("submissions")
+}
+
+model FieldValue {
+  id           String      @id @default(cuid())
+  submissionId String
+  submission   Submission  @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  fieldId      String
+  field        CustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  fieldName    String?
+  fieldLabel   String?
+  value        String
+  createdAt    DateTime    @default(now())
+
+  @@index([submissionId])
+  @@index([fieldId])
+  @@map("field_values")
+}
+
+model UploadedFile {
+  id               String      @id @default(cuid())
+  submissionId     String?
+  submission       Submission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  categoryId       String
+  category         Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  fileName         String
+  fileSize         Int
+  fileType         String      // "IMAGE" or "VIDEO" or mime type
+  mimeType         String?
+  driveFileId      String
+  driveUrl         String
+  driveThumbnailUrl String?
+  driveFolderId    String?
+  status           String      @default("SUCCESS")
+  createdAt        DateTime    @default(now())
+
+  @@index([categoryId])
+  @@index([submissionId])
+  @@map("uploaded_files")
+}
