@@ -90,11 +90,24 @@ export function PwaInstaller() {
 
     window.addEventListener("appinstalled", handleAppInstalled);
 
-    // 6. Check if this is the first time the teacher accesses the portal
-    const promptSeen = localStorage.getItem("simata_pwa_install_prompt_seen");
-    const isInstalled = localStorage.getItem("simata_pwa_installed");
+    // 6. Listen for manual trigger (e.g. from header button)
+    const handleOpenRequest = () => {
+      setShowIOSGuide(false);
+      setIsOpen(true);
+    };
 
-    if (!promptSeen && !isInstalled && !standalone) {
+    window.addEventListener("simata:open-install-prompt", handleOpenRequest);
+
+    // 7. Check if prompt should show automatically for teachers who haven't installed
+    const isInstalled = localStorage.getItem("simata_pwa_installed");
+    const dismissedAt = localStorage.getItem("simata_pwa_install_prompt_dismissed_at");
+    
+    // Check if dismissed within the last 24 hours
+    const dismissedRecently = dismissedAt
+      ? Date.now() - parseInt(dismissedAt, 10) < 24 * 60 * 60 * 1000
+      : false;
+
+    if (!dismissedRecently && !isInstalled && !standalone) {
       // Delay popup slightly (1.5s) for a smooth first-load visual presentation
       const timer = setTimeout(() => {
         setIsOpen(true);
@@ -104,12 +117,14 @@ export function PwaInstaller() {
         clearTimeout(timer);
         window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
         window.removeEventListener("appinstalled", handleAppInstalled);
+        window.removeEventListener("simata:open-install-prompt", handleOpenRequest);
       };
     }
 
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
       window.removeEventListener("appinstalled", handleAppInstalled);
+      window.removeEventListener("simata:open-install-prompt", handleOpenRequest);
     };
   }, []);
 
@@ -149,7 +164,9 @@ export function PwaInstaller() {
 
   const handleDismiss = () => {
     setIsOpen(false);
-    // Mark as seen so teacher is not interrupted on subsequent visits
+    setShowIOSGuide(false);
+    // Save timestamp so we don't bother the user again for the next 24 hours
+    localStorage.setItem("simata_pwa_install_prompt_dismissed_at", Date.now().toString());
     localStorage.setItem("simata_pwa_install_prompt_seen", "true");
   };
 
@@ -325,45 +342,20 @@ export function PwaInstaller() {
  * or want to install later can trigger the install anytime!
  */
 export function HeaderInstallButton() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState(true);
 
   useEffect(() => {
     const isStandaloneMode =
       window.matchMedia("(display-mode: standalone)").matches ||
-      (window.navigator as any).standalone === true;
+      (window.navigator as any).standalone === true ||
+      document.referrer.includes("android-app://");
     setIsStandalone(isStandaloneMode);
-
-    if (isStandaloneMode) return;
-
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-    };
-
-    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
-
-    return () => {
-      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
-    };
   }, []);
 
   if (isStandalone) return null;
 
-  const handleInstall = async () => {
-    if (deferredPrompt) {
-      await deferredPrompt.prompt();
-      const choice = await deferredPrompt.userChoice;
-      if (choice.outcome === "accepted") {
-        toast.success("Aplikasi SIMATA berhasil dipasang!");
-        setIsStandalone(true);
-      }
-      setDeferredPrompt(null);
-    } else {
-      toast.info(
-        "Untuk memasang aplikasi: Ketuk menu titik tiga (⋮) di browser Anda lalu pilih 'Instal aplikasi' atau 'Tambahkan ke Layar Utama'."
-      );
-    }
+  const handleInstall = () => {
+    window.dispatchEvent(new CustomEvent("simata:open-install-prompt"));
   };
 
   return (
@@ -374,7 +366,7 @@ export function HeaderInstallButton() {
       title="Pasang aplikasi SIMATA di HP/Laptop"
       className="gap-1.5 text-xs font-bold rounded-xl border-emerald-300 text-emerald-800 hover:bg-emerald-100/80 dark:border-emerald-700 dark:text-emerald-300 shadow-xs cursor-pointer bg-emerald-50/70"
     >
-      <Download className="h-3.5 w-3.5 text-emerald-600" />
+      <Download className="h-3.5 w-3.5 text-emerald-600 animate-bounce" />
       <span className="hidden sm:inline">Install</span> App
     </Button>
   );
