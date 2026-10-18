@@ -126,8 +126,8 @@ export function PublicUploadPortal({
   madrasahs?: MadrasahItem[];
 }) {
   const defaultMadrasahs: MadrasahItem[] = [
-    { id: "mi01", name: "MI Bustanul Huda 01 Dawuhan", code: "MI 01", isActive: true },
-    { id: "mi02", name: "MI Bustanul Huda 02 Dawuhan", code: "MI 02", isActive: true },
+    { id: "mi01", name: "MI Bustanul Huda 01", code: "MI 01", isActive: true },
+    { id: "mi02", name: "MI Bustanul Huda 02", code: "MI 02", isActive: true },
   ];
 
   const availableMadrasahs = madrasahs && madrasahs.length > 0 ? madrasahs : defaultMadrasahs;

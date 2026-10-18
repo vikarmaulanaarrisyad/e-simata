@@ -64,7 +64,7 @@ export function AdminLoginView() {
         closeSwal();
         showSwalSuccess({
           title: "Login Berhasil! 🎉",
-          message: "Selamat datang kembali di Panel Administrasi SIMATA MI Bustanul Huda Dawuhan.",
+          message: "Selamat datang kembali di Panel Administrasi SIMATA MI Bustanul Huda.",
           onUploadAgain: () => router.push("/admin"),
         });
 
@@ -147,7 +147,7 @@ export function AdminLoginView() {
           </div>
 
           <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-            Madrasah Ibtidaiyah Bustanul Huda Dawuhan
+            Madrasah Ibtidaiyah Bustanul Huda
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
             Masuk untuk mengelola kategori berkas, formulir, dan arsip Google Drive

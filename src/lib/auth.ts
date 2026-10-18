@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "adminpassword";
 const SESSION_SECRET =
-  process.env.SESSION_SECRET || "simata-secret-key-mibustanulhudadawuhan-2026-auth-session";
+  process.env.SESSION_SECRET || "simata-secret-key-mibustanulhuda-2026-auth-session";
 const COOKIE_NAME = "simata_admin_session";
 
 /**

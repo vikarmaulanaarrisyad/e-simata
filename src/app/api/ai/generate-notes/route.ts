@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     // If Gemini API Key is configured, attempt calling Gemini with fallback
     if (apiKey) {
       try {
-        const prompt = `Anda adalah asisten AI resmi untuk Wali Kelas di MI Bustanul Huda Dawuhan.
+        const prompt = `Anda adalah asisten AI resmi untuk Wali Kelas di MI Bustanul Huda.
 Tugas Anda: Buat catatan pelaksanaan kegiatan kelas yang singkat, formal, edukatif, dan bernada positif dalam 3 kalimat padat.
 
 Gaya contoh yang diinginkan:

@@ -121,7 +121,7 @@ export function AdminSidebar({ driveStatus }: { driveStatus: DriveStatus }) {
                 </span>
               </div>
               <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate mt-1">
-                MI Bustanul Huda Dawuhan
+                MI Bustanul Huda
               </p>
             </div>
           </Link>

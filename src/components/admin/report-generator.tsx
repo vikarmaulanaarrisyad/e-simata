@@ -247,7 +247,7 @@ export function ReportGenerator({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={loadReport}
+                onClick={() => loadReport(false)}
                 disabled={isPending}
                 className="rounded-xl text-xs font-bold border-slate-200 dark:border-slate-800 gap-1.5"
               >

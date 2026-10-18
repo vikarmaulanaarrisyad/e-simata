@@ -1,5 +1,5 @@
 /**
- * AI Pedagogical Generator for SIMATA (MI Bustanul Huda Dawuhan)
+ * AI Pedagogical Generator for SIMATA (MI Bustanul Huda)
  * Generates structured, formal, 3-sentence teacher reports matching educational guidelines.
  *
  * Example target style:

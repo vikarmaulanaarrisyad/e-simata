@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
         categoryId: category.id,
         madrasah,
         kelas: selectedClass,
-        date: activityDate,
+        date: activityDate || undefined,
       });
 
       if (dupCheck.success && dupCheck.isDuplicate && dupCheck.existingSubmission) {

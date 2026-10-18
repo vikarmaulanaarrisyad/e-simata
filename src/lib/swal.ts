@@ -1,7 +1,7 @@
 import Swal from "sweetalert2";
 
 /**
- * Custom SweetAlert2 theme matching SIMATA MI Bustanul Huda Dawuhan design system
+ * Custom SweetAlert2 theme matching SIMATA MI Bustanul Huda design system
  */
 
 const customClass = {
