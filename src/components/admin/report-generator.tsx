@@ -20,6 +20,7 @@ import {
   FileText,
   SlidersHorizontal,
   Info,
+  Film,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,8 +65,8 @@ export function ReportGenerator({
   const [selectedDate, setSelectedDate] = useState<string>(todayISO);
   const [selectedMadrasah, setSelectedMadrasah] = useState<string>("all");
 
-  // Options for printable report
   const [includePhotos, setIncludePhotos] = useState<boolean>(true);
+  const [includeVideos, setIncludeVideos] = useState<boolean>(true);
   const [includeNotes, setIncludeNotes] = useState<boolean>(true);
   const [includeSignatures, setIncludeSignatures] = useState<boolean>(true);
   const [headmasterName, setHeadmasterName] = useState<string>("H. Ahmad Fauzi, S.Pd.I., M.Pd.");
@@ -334,7 +335,7 @@ export function ReportGenerator({
               <span>Kustomisasi Tata Letak Laporan Dokumen F4</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -343,7 +344,19 @@ export function ReportGenerator({
                   className="rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer h-4 w-4"
                 />
                 <span className="font-semibold text-slate-700 dark:text-slate-300">
-                  Sertakan Lampiran Foto Kegiatan
+                  Sertakan Lampiran Foto
+                </span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={includeVideos}
+                  onChange={(e) => setIncludeVideos(e.target.checked)}
+                  className="rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer h-4 w-4"
+                />
+                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  Sertakan Link Video Drive
                 </span>
               </label>
 
@@ -355,7 +368,7 @@ export function ReportGenerator({
                   className="rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer h-4 w-4"
                 />
                 <span className="font-semibold text-slate-700 dark:text-slate-300">
-                  Sertakan Kolom Catatan Guru / Refleksi
+                  Sertakan Catatan Refleksi
                 </span>
               </label>
 
@@ -367,7 +380,7 @@ export function ReportGenerator({
                   className="rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer h-4 w-4"
                 />
                 <span className="font-semibold text-slate-700 dark:text-slate-300">
-                  Sertakan Lembar Pengesahan Resmi
+                  Sertakan Lembar Pengesahan
                 </span>
               </label>
             </div>
@@ -552,31 +565,48 @@ export function ReportGenerator({
                   </tr>
                 </thead>
                 <tbody>
-                  {reportData.submissions.map((item, idx) => (
-                    <tr key={item.id} className="border-b border-black">
-                      <td className="p-2 border border-black text-center font-mono">{idx + 1}</td>
-                      <td className="p-2 border border-black text-center font-bold">
-                        {item.kelas}
-                      </td>
-                      <td className="p-2 border border-black text-[11px]">
-                        {item.madrasah.includes("01") ? "MI Bustanul Huda 01" : "MI Bustanul Huda 02"}
-                      </td>
-                      <td className="p-2 border border-black font-semibold">
-                        {item.submitterName}
-                      </td>
-                      <td className="p-2 border border-black text-center font-mono text-[10.5px]">
-                        {item.timeFormatted}
-                      </td>
-                      <td className="p-2 border border-black text-center font-bold">
-                        {item.files.length} Foto
-                      </td>
-                      {includeNotes && (
-                        <td className="p-2 border border-black text-[10.5px] leading-relaxed">
-                          {item.notes || "-"}
+                  {reportData.submissions.map((item, idx) => {
+                    const pCount = item.files.filter(
+                      (f) =>
+                        f.fileType === "IMAGE" ||
+                        (!f.fileType?.includes("VIDEO") && !f.fileName.match(/\.(mp4|mov|avi|mkv|webm)$/i))
+                    ).length;
+
+                    const vCount = item.files.filter(
+                      (f) =>
+                        f.fileType === "VIDEO" ||
+                        Boolean(f.fileName.match(/\.(mp4|mov|avi|mkv|webm)$/i))
+                    ).length;
+
+                    return (
+                      <tr key={item.id} className="border-b border-black">
+                        <td className="p-2 border border-black text-center font-mono">{idx + 1}</td>
+                        <td className="p-2 border border-black text-center font-bold">
+                          {item.kelas}
                         </td>
-                      )}
-                    </tr>
-                  ))}
+                        <td className="p-2 border border-black text-[11px]">
+                          {item.madrasah.includes("01") ? "MI Bustanul Huda 01" : "MI Bustanul Huda 02"}
+                        </td>
+                        <td className="p-2 border border-black font-semibold">
+                          {item.submitterName}
+                        </td>
+                        <td className="p-2 border border-black text-center font-mono text-[10.5px]">
+                          {item.timeFormatted}
+                        </td>
+                        <td className="p-2 border border-black text-center font-bold text-[10px]">
+                          {pCount > 0 && <span>{pCount} Foto</span>}
+                          {pCount > 0 && vCount > 0 && <span className="text-slate-400"> • </span>}
+                          {vCount > 0 && <span className="text-blue-800 font-semibold">{vCount} Video (Link)</span>}
+                          {pCount === 0 && vCount === 0 && <span className="text-slate-400">-</span>}
+                        </td>
+                        {includeNotes && (
+                          <td className="p-2 border border-black text-[10.5px] leading-relaxed">
+                            {item.notes || "-"}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             ) : (
@@ -588,65 +618,146 @@ export function ReportGenerator({
             )}
           </div>
 
-          {/* 5. LAMPIRAN DOKUMENTASI FOTO KEGIATAN SISWA */}
-          {includePhotos && reportData?.submissions && reportData.submissions.length > 0 && (
-            <div className="my-5 avoid-break">
-              <h4 className="text-xs font-black uppercase mb-3 tracking-wide text-slate-900 border-t border-slate-300 pt-3">
-                II. Lampiran Foto Dokumentasi Kegiatan Siswa Per Rombel
-              </h4>
+          {/* Pemisahan Item Foto & Video untuk Lampiran PDF */}
+          {(() => {
+            const allItems = (reportData?.submissions || []).flatMap((sub) =>
+              sub.files.map((file) => ({ sub, file }))
+            );
 
-              <div className="grid grid-cols-2 gap-3.5">
-                {reportData.submissions.flatMap((sub) =>
-                  sub.files.map((file, fileIdx) => (
-                    <div
-                      key={file.id}
-                      className="border border-slate-400 p-2 rounded-lg bg-white flex flex-col justify-between avoid-break"
-                    >
-                      <div className="h-44 w-full bg-slate-100 rounded overflow-hidden flex items-center justify-center border border-slate-200">
-                        {file.driveThumbnailUrl ? (
-                          <img
-                            src={file.driveThumbnailUrl}
-                            alt={file.fileName}
-                            className="h-full w-full object-cover"
-                            crossOrigin="anonymous"
-                          />
-                        ) : (
-                          <div className="flex flex-col items-center justify-center text-slate-400 p-3 text-center">
-                            <ImageIcon className="h-8 w-8 text-emerald-600 mb-1" />
-                            <span className="text-[10px] font-bold text-slate-700 break-all line-clamp-2">
-                              {file.fileName}
-                            </span>
-                            <span className="text-[9px] text-muted-foreground mt-0.5">
-                              Tersimpan di Google Drive
-                            </span>
+            const photoItems = allItems.filter(
+              ({ file }) =>
+                file.fileType === "IMAGE" ||
+                (!file.fileType?.includes("VIDEO") && !file.fileName.match(/\.(mp4|mov|avi|mkv|webm)$/i))
+            );
+
+            const videoItems = allItems.filter(
+              ({ file }) =>
+                file.fileType === "VIDEO" ||
+                Boolean(file.fileName.match(/\.(mp4|mov|avi|mkv|webm)$/i))
+            );
+
+            return (
+              <>
+                {/* 5A. LAMPIRAN DOKUMENTASI FOTO KEGIATAN SISWA */}
+                {includePhotos && photoItems.length > 0 && (
+                  <div className="my-5 avoid-break">
+                    <h4 className="text-xs font-black uppercase mb-3 tracking-wide text-slate-900 border-t border-slate-300 pt-3">
+                      II. Lampiran Foto Dokumentasi Kegiatan Siswa Per Rombel
+                    </h4>
+
+                    <div className="grid grid-cols-2 gap-3.5">
+                      {photoItems.map(({ sub, file }) => (
+                        <div
+                          key={file.id}
+                          className="border border-slate-400 p-2 rounded-lg bg-white flex flex-col justify-between avoid-break"
+                        >
+                          <div className="h-44 w-full bg-slate-100 rounded overflow-hidden flex items-center justify-center border border-slate-200">
+                            {file.driveThumbnailUrl ? (
+                              <img
+                                src={file.driveThumbnailUrl}
+                                alt={file.fileName}
+                                className="h-full w-full object-cover"
+                                crossOrigin="anonymous"
+                              />
+                            ) : (
+                              <div className="flex flex-col items-center justify-center text-slate-400 p-3 text-center">
+                                <ImageIcon className="h-8 w-8 text-emerald-600 mb-1" />
+                                <span className="text-[10px] font-bold text-slate-700 break-all line-clamp-2">
+                                  {file.fileName}
+                                </span>
+                                <span className="text-[9px] text-muted-foreground mt-0.5">
+                                  Tersimpan di Google Drive
+                                </span>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
 
-                      <div className="mt-2 text-[10.5px] leading-tight space-y-0.5">
-                        <div className="flex items-center justify-between font-bold">
-                          <span className="text-black">
-                            {sub.kelas} ({sub.madrasah.includes("01") ? "MI 01" : "MI 02"})
-                          </span>
-                          <span className="font-mono text-[9.5px] text-slate-600">
-                            {sub.timeFormatted}
-                          </span>
+                          <div className="mt-2 text-[10.5px] leading-tight space-y-0.5">
+                            <div className="flex items-center justify-between font-bold">
+                              <span className="text-black">
+                                {sub.kelas} ({sub.madrasah.includes("01") ? "MI 01" : "MI 02"})
+                              </span>
+                              <span className="font-mono text-[9.5px] text-slate-600">
+                                {sub.timeFormatted}
+                              </span>
+                            </div>
+                            <p className="text-slate-700 text-[10px] truncate">
+                              Wali Kelas: <strong>{sub.submitterName}</strong>
+                            </p>
+                            {sub.notes && (
+                              <p className="text-slate-600 italic text-[9.5px] line-clamp-1">
+                                "{sub.notes}"
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-slate-700 text-[10px] truncate">
-                          Wali Kelas: <strong>{sub.submitterName}</strong>
-                        </p>
-                        {sub.notes && (
-                          <p className="text-slate-600 italic text-[9.5px] line-clamp-1">
-                            "{sub.notes}"
-                          </p>
-                        )}
-                      </div>
+                      ))}
                     </div>
-                  ))
+                  </div>
                 )}
-              </div>
-            </div>
-          )}
+
+                {/* 5B. LAMPIRAN TAUTAN / LINK VIDEO KEGIATAN SISWA (HANYA LINK) */}
+                {includeVideos && videoItems.length > 0 && (
+                  <div className="my-5 avoid-break">
+                    <h4 className="text-xs font-black uppercase mb-2 tracking-wide text-slate-900 border-t border-slate-300 pt-3 flex items-center justify-between">
+                      <span>
+                        {includePhotos && photoItems.length > 0 ? "III." : "II."} Tautan / Link Video Kegiatan Siswa (Google Drive)
+                      </span>
+                      <span className="text-[10px] font-normal lowercase text-slate-500 italic">
+                        (Dapat diklik langsung pada PDF atau dibuka via browser)
+                      </span>
+                    </h4>
+
+                    <table className="print-table w-full border border-black text-left text-xs">
+                      <thead>
+                        <tr className="bg-slate-100 border-b border-black text-black">
+                          <th className="p-2 border border-black text-center w-8">No</th>
+                          <th className="p-2 border border-black text-center w-24">Rombel</th>
+                          <th className="p-2 border border-black w-32">Wali Kelas</th>
+                          <th className="p-2 border border-black w-44">Nama Berkas Video</th>
+                          <th className="p-2 border border-black text-center w-16">Ukuran</th>
+                          <th className="p-2 border border-black">Tautan / Link Google Drive</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {videoItems.map(({ sub, file }, vIdx) => (
+                          <tr key={file.id} className="border-b border-black">
+                            <td className="p-2 border border-black text-center font-mono">{vIdx + 1}</td>
+                            <td className="p-2 border border-black text-center font-bold">
+                              {sub.kelas} ({sub.madrasah.includes("01") ? "MI 01" : "MI 02"})
+                            </td>
+                            <td className="p-2 border border-black font-semibold text-[11px]">
+                              {sub.submitterName}
+                            </td>
+                            <td className="p-2 border border-black font-mono text-[10.5px] break-all">
+                              🎬 {file.fileName}
+                            </td>
+                            <td className="p-2 border border-black text-center font-mono text-[10px]">
+                              {file.fileSize ? formatBytes(file.fileSize) : "-"}
+                            </td>
+                            <td className="p-2 border border-black">
+                              <a
+                                href={file.driveUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-700 underline font-mono text-[10px] break-all hover:text-blue-900"
+                              >
+                                {file.driveUrl || "Buka di Google Drive"}
+                              </a>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    <p className="text-[9.5px] text-slate-500 italic mt-1.5">
+                      * Catatan: Berkas video diarsipkan di cloud Google Drive resmi madrasah. Tautan di atas aktif dan dapat diakses dengan mengetuk link pada dokumen PDF.
+                    </p>
+                  </div>
+                )}
+              </>
+            );
+          })()}
 
           {/* 6. LEMBAR PENGESAHAN & TANDA TANGAN RESMI */}
           {includeSignatures && (
