@@ -159,166 +159,148 @@ export function PwaInstaller() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/65 backdrop-blur-sm animate-in fade-in-50 duration-300 select-none">
-      <div className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white dark:bg-slate-900 border border-emerald-200/80 dark:border-emerald-800 shadow-2xl animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs sm:backdrop-blur-sm animate-in fade-in-50 duration-200 select-none">
+      <div className="relative w-full max-w-[340px] sm:max-w-[360px] overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200/80 dark:border-emerald-800 shadow-2xl animate-in zoom-in-95 duration-200">
         {/* Background glow header */}
-        <div className="relative p-6 sm:p-7 pb-6 bg-gradient-to-br from-emerald-700 via-teal-700 to-emerald-900 text-white overflow-hidden text-center">
-          <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-white/10 blur-2xl pointer-events-none" />
-          <div className="absolute -left-10 bottom-0 w-32 h-32 rounded-full bg-emerald-400/20 blur-xl pointer-events-none" />
+        <div className="relative px-4 pt-4 pb-3 bg-gradient-to-br from-emerald-700 via-teal-700 to-emerald-900 text-white overflow-hidden text-center">
+          <div className="absolute -right-6 -top-6 w-28 h-28 rounded-full bg-white/10 blur-xl pointer-events-none" />
+          <div className="absolute -left-6 bottom-0 w-24 h-24 rounded-full bg-emerald-400/20 blur-lg pointer-events-none" />
 
           {/* Close button */}
           <button
             onClick={handleDismiss}
-            className="absolute top-4 right-4 p-1.5 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            className="absolute top-2.5 right-2.5 p-1 rounded-full text-white/70 hover:text-white hover:bg-white/15 transition-colors cursor-pointer z-10"
             aria-label="Tutup"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
 
           {/* SIMATA App Icon Badge */}
-          <div className="mx-auto mb-3.5 relative flex h-20 w-20 items-center justify-center rounded-2xl bg-white text-emerald-800 shadow-xl shadow-emerald-950/30 ring-4 ring-white/20">
+          <div className="mx-auto mb-2 relative flex h-12 w-12 items-center justify-center rounded-xl bg-white text-emerald-800 shadow-md shadow-emerald-950/30 ring-2 ring-white/30">
             <img
               src="/icons/icon-192x192.png"
               alt="SIMATA Icon"
-              className="h-16 w-16 rounded-xl object-contain"
+              className="h-9 w-9 rounded-lg object-contain"
             />
-            <span className="absolute -bottom-1 -right-1 flex h-4 w-4">
+            <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-4 w-4 bg-emerald-500 border-2 border-white"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border-2 border-white"></span>
             </span>
           </div>
 
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md text-[11px] font-extrabold uppercase tracking-wider text-emerald-100 mb-2 border border-white/20">
-            <Sparkles className="h-3.5 w-3.5 text-amber-300 animate-pulse" />
-            <span>Aplikasi Resmi Madrasah</span>
+          <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/15 backdrop-blur-xs text-[10px] font-bold text-emerald-100 mb-1 border border-white/20">
+            <Sparkles className="h-3 w-3 text-amber-300" />
+            <span>Aplikasi Madrasah</span>
           </div>
 
-          <h3 className="text-xl sm:text-2xl font-black tracking-tight leading-tight">
+          <h3 className="text-base sm:text-lg font-black tracking-tight leading-tight">
             Pasang Aplikasi SIMATA
           </h3>
-          <p className="text-xs text-emerald-100 mt-1 max-w-xs mx-auto leading-relaxed">
+          <p className="text-[11px] text-emerald-100/90 mt-0.5 font-medium">
             MI Bustanul Huda Dawuhan
           </p>
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 sm:p-7 space-y-5">
+        <div className="p-3.5 sm:p-4 space-y-3">
           {!showIOSGuide ? (
             <>
-              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed text-center">
-                Pasang SIMATA langsung di layar utama HP atau Laptop Bapak/Ibu Guru untuk pengalaman pengunggahan berkas yang lebih cepat, praktis, dan tanpa perlu membuka browser berulang kali!
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed text-center">
+                Pasang di layar utama HP Bapak/Ibu Guru untuk akses upload berkas yang lebih cepat tanpa browser.
               </p>
 
               {/* Feature Benefit Chips */}
-              <div className="space-y-2.5">
-                <div className="flex items-start gap-3 p-3 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/60 text-xs">
-                  <div className="h-7 w-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
-                    <Zap className="h-4 w-4" />
+              <div className="grid grid-cols-3 gap-1.5 py-0.5">
+                <div className="flex flex-col items-center text-center p-1.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-100/80 dark:border-emerald-900/40">
+                  <div className="h-6 w-6 rounded-lg bg-emerald-600/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-1">
+                    <Zap className="h-3.5 w-3.5" />
                   </div>
-                  <div>
-                    <h4 className="font-extrabold text-slate-900 dark:text-white">
-                      1-Ketukan dari Layar Utama (Home Screen)
-                    </h4>
-                    <p className="text-[11px] text-muted-foreground mt-0.5 leading-normal">
-                      Buka aplikasi langsung dari icon di menu HP Anda seperti aplikasi native Play Store / App Store.
-                    </p>
-                  </div>
+                  <span className="text-[10px] font-bold text-slate-800 dark:text-slate-200">1-Ketukan</span>
+                  <span className="text-[9px] text-muted-foreground leading-none mt-0.5">Layar Utama</span>
                 </div>
 
-                <div className="flex items-start gap-3 p-3 rounded-2xl bg-teal-50/80 dark:bg-teal-950/30 border border-teal-100 dark:border-teal-900/60 text-xs">
-                  <div className="h-7 w-7 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
-                    <Smartphone className="h-4 w-4" />
+                <div className="flex flex-col items-center text-center p-1.5 rounded-xl bg-teal-50/80 dark:bg-teal-950/30 border border-teal-100/80 dark:border-teal-900/40">
+                  <div className="h-6 w-6 rounded-lg bg-teal-600/10 text-teal-600 dark:text-teal-400 flex items-center justify-center mb-1">
+                    <Smartphone className="h-3.5 w-3.5" />
                   </div>
-                  <div>
-                    <h4 className="font-extrabold text-slate-900 dark:text-white">
-                      Layar Penuh Tanpa Address Bar
-                    </h4>
-                    <p className="text-[11px] text-muted-foreground mt-0.5 leading-normal">
-                      Tampilan bersih dan luas, memudahkan pengunggahan foto dan video kegiatan kelas.
-                    </p>
-                  </div>
+                  <span className="text-[10px] font-bold text-slate-800 dark:text-slate-200">Layar Penuh</span>
+                  <span className="text-[9px] text-muted-foreground leading-none mt-0.5">Tanpa URL bar</span>
                 </div>
 
-                <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 text-xs">
-                  <div className="h-7 w-7 rounded-xl bg-slate-700 dark:bg-slate-700 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
-                    <Layers className="h-4 w-4" />
+                <div className="flex flex-col items-center text-center p-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800">
+                  <div className="h-6 w-6 rounded-lg bg-slate-700/10 text-slate-700 dark:text-slate-300 flex items-center justify-center mb-1">
+                    <Layers className="h-3.5 w-3.5" />
                   </div>
-                  <div>
-                    <h4 className="font-extrabold text-slate-900 dark:text-white">
-                      Ringan & Hemat Kuota (PWA)
-                    </h4>
-                    <p className="text-[11px] text-muted-foreground mt-0.5 leading-normal">
-                      Hanya berukuran beberapa kilobyte dengan cache cerdas untuk akses super cepat.
-                    </p>
-                  </div>
+                  <span className="text-[10px] font-bold text-slate-800 dark:text-slate-200">Ringan</span>
+                  <span className="text-[9px] text-muted-foreground leading-none mt-0.5">Hemat kuota</span>
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="space-y-2 pt-2">
+              <div className="space-y-1.5 pt-1">
                 <Button
                   type="button"
                   onClick={handleInstallClick}
-                  className="w-full h-12 rounded-2xl font-extrabold text-sm bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white shadow-xl shadow-emerald-600/25 transition-all hover:scale-[1.01] active:scale-98 cursor-pointer gap-2"
+                  className="w-full h-9 rounded-xl font-bold text-xs bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white shadow-md shadow-emerald-600/20 transition-all cursor-pointer gap-1.5"
                 >
-                  <Download className="h-4 w-4" />
-                  <span>Pasang Aplikasi Sekarang</span>
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Pasang Sekarang</span>
                 </Button>
 
                 <Button
                   type="button"
                   variant="ghost"
                   onClick={handleDismiss}
-                  className="w-full h-10 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  className="w-full h-7 rounded-lg text-[11px] font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 >
-                  Nanti Saja, Lanjut ke Web
+                  Nanti Saja
                 </Button>
               </div>
             </>
           ) : (
             /* iOS Safari Step-by-Step Guide */
-            <div className="space-y-4">
-              <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-center text-emerald-900 dark:text-emerald-200 font-bold">
-                📱 Panduan Pemasangan di iPhone / iPad (Safari)
+            <div className="space-y-2.5">
+              <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[11px] text-center text-emerald-900 dark:text-emerald-200 font-bold">
+                📱 Panduan di iPhone / iPad (Safari)
               </div>
 
-              <div className="space-y-3 text-xs text-slate-700 dark:text-slate-300">
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
-                  <span className="h-6 w-6 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center shrink-0 text-xs">
+              <div className="space-y-1.5 text-[11px] text-slate-700 dark:text-slate-300">
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
+                  <span className="h-5 w-5 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center shrink-0 text-[10px]">
                     1
                   </span>
-                  <div className="flex-1">
-                    <span>Ketuk tombol </span>
-                    <strong className="inline-flex items-center gap-1 font-bold text-emerald-700 dark:text-emerald-400">
-                      <Share2 className="h-3.5 w-3.5 inline" /> Bagikan (Share)
+                  <div className="flex-1 leading-snug">
+                    <span>Ketuk </span>
+                    <strong className="inline-flex items-center gap-0.5 font-bold text-emerald-700 dark:text-emerald-400">
+                      <Share2 className="h-3 w-3 inline" /> Bagikan (Share)
                     </strong>
-                    <span> di bilah bawah browser Safari.</span>
+                    <span> di Safari.</span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
-                  <span className="h-6 w-6 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center shrink-0 text-xs">
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
+                  <span className="h-5 w-5 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center shrink-0 text-[10px]">
                     2
                   </span>
-                  <div className="flex-1">
-                    <span>Gulir ke bawah lalu pilih menu </span>
-                    <strong className="inline-flex items-center gap-1 font-bold text-emerald-700 dark:text-emerald-400">
-                      <PlusSquare className="h-3.5 w-3.5 inline" /> Tambah ke Layar Utama
+                  <div className="flex-1 leading-snug">
+                    <span>Pilih </span>
+                    <strong className="inline-flex items-center gap-0.5 font-bold text-emerald-700 dark:text-emerald-400">
+                      <PlusSquare className="h-3 w-3 inline" /> Tambah ke Layar Utama
                     </strong>
                     <span>.</span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
-                  <span className="h-6 w-6 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center shrink-0 text-xs">
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80">
+                  <span className="h-5 w-5 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center shrink-0 text-[10px]">
                     3
                   </span>
-                  <div className="flex-1">
-                    <span>Ketuk tombol </span>
+                  <div className="flex-1 leading-snug">
+                    <span>Ketuk </span>
                     <strong className="font-bold text-emerald-700 dark:text-emerald-400">
                       "Tambah" (Add)
                     </strong>
-                    <span> di sudut kanan atas layar. Selesai! 🎉</span>
+                    <span> di kanan atas. 🎉</span>
                   </div>
                 </div>
               </div>
@@ -326,9 +308,9 @@ export function PwaInstaller() {
               <Button
                 type="button"
                 onClick={handleDismiss}
-                className="w-full h-11 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-md cursor-pointer"
+                className="w-full h-8 rounded-lg font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer"
               >
-                Saya Sudah Mengerti, Tutup Panduan
+                Tutup Panduan
               </Button>
             </div>
           )}
