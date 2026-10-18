@@ -554,7 +554,7 @@ export function SettingsManager({ initialStatus, initialMadrasahs = [] }: Settin
               </Label>
               <Input
                 id="m-name"
-                placeholder="Contoh: MI Bustanul Huda 01 Dawuhan"
+                placeholder="Contoh: MI Bustanul Huda 01"
                 value={madrasahNameInput}
                 onChange={(e) => setMadrasahNameInput(e.target.value)}
               />

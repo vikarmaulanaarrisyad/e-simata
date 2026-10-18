@@ -542,7 +542,7 @@ export function ReportGenerator({
                         {item.kelas}
                       </td>
                       <td className="p-2 border border-black text-[11px]">
-                        {item.madrasah.includes("01") ? "MI 01 Dawuhan" : "MI 02 Dawuhan"}
+                        {item.madrasah.includes("01") ? "MI Bustanul Huda 01" : "MI Bustanul Huda 02"}
                       </td>
                       <td className="p-2 border border-black font-semibold">
                         {item.submitterName}

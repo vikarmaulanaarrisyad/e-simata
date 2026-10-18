@@ -256,7 +256,7 @@ export function SubmissionsExplorer({
     setEditingSubmission(item);
     setEditSubmitterName(item.submitterName || "");
     setEditSubmitterContact(item.submitterContact || "");
-    setEditMadrasah(item.madrasah || "MI Bustanul Huda 01 Dawuhan");
+    setEditMadrasah(item.madrasah || "MI Bustanul Huda 01");
     const kelasVal =
       item.answersJson?.kelas ||
       item.answersJson?.rombel ||
@@ -610,8 +610,8 @@ export function SubmissionsExplorer({
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
                   <SelectItem value="all">Semua Madrasah</SelectItem>
-                  <SelectItem value="MI Bustanul Huda 01 Dawuhan">MI Bustanul Huda 01</SelectItem>
-                  <SelectItem value="MI Bustanul Huda 02 Dawuhan">MI Bustanul Huda 02</SelectItem>
+                  <SelectItem value="MI Bustanul Huda 01">MI Bustanul Huda 01</SelectItem>
+                  <SelectItem value="MI Bustanul Huda 02">MI Bustanul Huda 02</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1183,8 +1183,8 @@ export function SubmissionsExplorer({
                         <SelectValue placeholder="Pilih Madrasah" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="MI Bustanul Huda 01 Dawuhan">MI Bustanul Huda 01 Dawuhan</SelectItem>
-                        <SelectItem value="MI Bustanul Huda 02 Dawuhan">MI Bustanul Huda 02 Dawuhan</SelectItem>
+                        <SelectItem value="MI Bustanul Huda 01">MI Bustanul Huda 01</SelectItem>
+                        <SelectItem value="MI Bustanul Huda 02">MI Bustanul Huda 02</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

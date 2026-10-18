@@ -126,13 +126,13 @@ export function PublicUploadPortal({
   madrasahs?: MadrasahItem[];
 }) {
   const defaultMadrasahs: MadrasahItem[] = [
-    { id: "mi01", name: "MI Bustanul Huda 01 Dawuhan", code: "MI 01", isActive: true },
-    { id: "mi02", name: "MI Bustanul Huda 02 Dawuhan", code: "MI 02", isActive: true },
+    { id: "mi01", name: "MI Bustanul Huda 01", code: "MI 01", isActive: true },
+    { id: "mi02", name: "MI Bustanul Huda 02", code: "MI 02", isActive: true },
   ];
 
   const availableMadrasahs = madrasahs && madrasahs.length > 0 ? madrasahs : defaultMadrasahs;
   const [selectedMadrasah, setSelectedMadrasah] = useState<string>(
-    availableMadrasahs[0]?.name || "MI Bustanul Huda 01 Dawuhan"
+    availableMadrasahs[0]?.name || "MI Bustanul Huda 01"
   );
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(
@@ -529,7 +529,7 @@ export function PublicUploadPortal({
     setSubmitterContact("");
     setNotes("");
     setUploadProgress(0);
-    setSelectedMadrasah(availableMadrasahs[0]?.name || "MI Bustanul Huda 01 Dawuhan");
+    setSelectedMadrasah(availableMadrasahs[0]?.name || "MI Bustanul Huda 01");
     setDuplicateInfo(null);
     setAllowSupplementary(false);
   };

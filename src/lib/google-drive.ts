@@ -467,11 +467,11 @@ export async function setupSubmissionFolder(params: {
     parentFolderId: baseFolderId,
   });
 
-  // 2. Subfolder Level 1: [Nama Madrasah] (misal: "MI Bustanul Huda 01 Dawuhan")
+  // 2. Subfolder Level 1: [Nama Madrasah] (misal: "MI Bustanul Huda 01")
   const cleanMadrasah =
     madrasahName && madrasahName.trim() !== ""
       ? madrasahName.trim()
-      : "MI Bustanul Huda 01 Dawuhan";
+      : "MI Bustanul Huda 01";
   const madrasahFolder = await getOrCreateDriveFolder({
     folderName: cleanMadrasah,
     parentFolderId: rootFolder.id,

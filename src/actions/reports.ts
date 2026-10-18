@@ -146,7 +146,7 @@ export async function getReportData(params: ReportQueryParams) {
         id: sub.id,
         categoryId: sub.categoryId,
         categoryName: sub.category.name,
-        madrasah: sub.madrasah || "MI Bustanul Huda 01 Dawuhan",
+        madrasah: sub.madrasah || "MI Bustanul Huda 01",
         kelas,
         submitterName: sub.submitterName || "Wali Kelas",
         submitterContact: sub.submitterContact,

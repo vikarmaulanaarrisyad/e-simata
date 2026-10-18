@@ -549,7 +549,7 @@ export async function checkDuplicateSubmission(params: {
             id: sub.id,
             submitterName: sub.submitterName || "Wali Kelas",
             submitterContact: sub.submitterContact,
-            madrasah: sub.madrasah || madrasah || "MI Bustanul Huda 01 Dawuhan",
+            madrasah: sub.madrasah || madrasah || "MI Bustanul Huda 01",
             categoryName: sub.category.name,
             kelas: subClassVal,
             filesCount: sub.files.length,
