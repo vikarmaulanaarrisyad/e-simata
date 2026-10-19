@@ -70,6 +70,7 @@ import {
   showSwalSuccess,
   showSwalSuccessAlert,
   showSwalError,
+  showSwalWarning,
   showSwalLoading,
   closeSwal,
 } from "@/lib/swal";
@@ -318,6 +319,15 @@ export function SubmissionsExplorer({
   const handleReplaceFile = async (fileId: string, newFile: File) => {
     if (!editingSubmission) return;
 
+    const sizeMb = newFile.size / (1024 * 1024);
+    if (sizeMb > 500) {
+      showSwalWarning(
+        "Ukuran Berkas Terlalu Besar",
+        `Berkas "<b>${newFile.name}</b>" berukuran <b>${formatBytes(newFile.size)}</b>.<br><br>Batas maksimal unggah langsung pada panel admin adalah 500 MB per berkas.`
+      );
+      return;
+    }
+
     const confirmed = await showSwalConfirm(
       "Ganti Berkas di Google Drive?",
       `Anda akan mengganti berkas dengan <b>${newFile.name}</b> (${formatBytes(newFile.size)}).<br><br><span class="text-xs text-amber-600 dark:text-amber-400 font-bold">⚠️ Berkas lama di Google Drive akan otomatis dihapus dan diganti berkas baru.</span>`,
@@ -406,6 +416,16 @@ export function SubmissionsExplorer({
     if (!files || files.length === 0 || !editingSubmission) return;
 
     const file = files[0];
+    const sizeMb = file.size / (1024 * 1024);
+    if (sizeMb > 500) {
+      showSwalWarning(
+        "Ukuran Berkas Terlalu Besar",
+        `Berkas "<b>${file.name}</b>" berukuran <b>${formatBytes(file.size)}</b>.<br><br>Batas maksimal unggah langsung pada panel admin adalah 500 MB per berkas.`
+      );
+      e.target.value = "";
+      return;
+    }
+
     showSwalLoading({
       title: "Mengunggah Berkas Baru...",
       stepText: `Mengunggah "${file.name}" ke Google Drive...`,

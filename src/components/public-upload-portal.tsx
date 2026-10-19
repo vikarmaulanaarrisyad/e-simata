@@ -594,8 +594,8 @@ export function PublicUploadPortal({
       }
     }
 
-    // Validasi ukuran masing-masing berkas terhadap batas maksimal kategori (default 100 MB)
-    const categoryLimitMb = selectedCategory.maxFileSizeMb || 100;
+    // Validasi ukuran masing-masing berkas terhadap batas maksimal kategori (default 500 MB)
+    const categoryLimitMb = selectedCategory.maxFileSizeMb || 500;
     for (const file of readyFiles) {
       const sizeMb = file.size / (1024 * 1024);
       if (sizeMb > categoryLimitMb) {
@@ -618,30 +618,54 @@ export function PublicUploadPortal({
       updateSwalLoading("1/3 Menyiapkan struktur folder rombel di Google Drive...", 15);
       setUploadProgress(15);
 
-      // 1. Inisiasi Submisi & Siapkan Sesi Resumable Upload Google Drive
-      const initRes = await fetch("/api/upload/init", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          categoryId: selectedCategory.id,
-          madrasah: selectedMadrasah,
-          activityDate,
-          submitterName: submitterName.trim() || null,
-          submitterContact: submitterContact.trim() || null,
-          notes: notes.trim() || null,
-          fieldsData: fieldAnswers,
-          allowSupplementary,
-          replaceSubmissionId:
-            replacePrevious && duplicateInfo?.existingSubmission
-              ? duplicateInfo.existingSubmission.id
-              : null,
-          files: readyFiles.map((f) => ({
-            name: f.name,
-            size: f.size,
-            type: f.type || "application/octet-stream",
-          })),
-        }),
-      });
+      // 1. Inisiasi Submisi & Siapkan Sesi Resumable Upload Google Drive (dengan toleransi retry otomatis)
+      let initRes: Response | null = null;
+      let initError: any = null;
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          initRes = await fetch("/api/upload/init", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              categoryId: selectedCategory.id,
+              madrasah: selectedMadrasah,
+              activityDate,
+              submitterName: submitterName.trim() || null,
+              submitterContact: submitterContact.trim() || null,
+              notes: notes.trim() || null,
+              fieldsData: fieldAnswers,
+              allowSupplementary,
+              replaceSubmissionId:
+                replacePrevious && duplicateInfo?.existingSubmission
+                  ? duplicateInfo.existingSubmission.id
+                  : null,
+              files: readyFiles.map((f) => ({
+                name: f.name,
+                size: f.size,
+                type: f.type || "application/octet-stream",
+              })),
+            }),
+          });
+          if (initRes.ok) break;
+        } catch (e: any) {
+          initError = e;
+          if (attempt < 2) {
+            updateSwalLoading(
+              `1/3 Menghubungkan ke server (mencoba ulang ${attempt + 2}/3)...`,
+              15
+            );
+            await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)));
+          }
+        }
+      }
+
+      if (!initRes) {
+        throw (
+          initError ||
+          new Error("Gagal menghubungi server untuk inisiasi pengunggahan. Silakan periksa jaringan internet Anda.")
+        );
+      }
 
       const initText = await initRes.text();
       let initData: any = null;
@@ -668,8 +692,7 @@ export function PublicUploadPortal({
         return;
       }
 
-      // 2. Transmisikan Berkas Menggunakan Potongan Chunk (2 MiB per chunk - aman di serverless & mobile)
-      const CHUNK_SIZE = 2 * 1024 * 1024; // 2,097,152 bytes (kelipatan 256 KiB)
+      // 2. Transmisikan Berkas Menggunakan Potongan Chunk (2 MiB standar, 4 MiB untuk berkas > 100 MB - aman di serverless & mobile)
       let totalUploadedBytes = 0;
       const uploadedFilesResults: any[] = [];
 
@@ -680,13 +703,15 @@ export function PublicUploadPortal({
         const isVideo = file.type.startsWith("video/");
         const fileLabel = isVideo ? "Video Kegiatan" : "Foto Dokumentasi";
 
+        // Berkas > 100 MB menggunakan chunk 4 MiB (kelipatan 256 KiB, < 4.5 MB Vercel limit) agar proses 2x lebih cepat
+        const CHUNK_SIZE = fileSize > 100 * 1024 * 1024 ? 4 * 1024 * 1024 : 2 * 1024 * 1024;
+
         let startByte = 0;
         while (startByte < fileSize) {
           const endByte = Math.min(startByte + CHUNK_SIZE, fileSize) - 1;
           const chunkBlob = file.slice(startByte, endByte + 1);
 
           const chunkFormData = new FormData();
-          chunkFormData.append("submissionId", initData.submissionId);
           chunkFormData.append("categoryId", selectedCategory.id);
           chunkFormData.append("fileIndex", String(fileIdx));
           chunkFormData.append("cleanFileName", fileSession.cleanFileName);
@@ -702,11 +727,11 @@ export function PublicUploadPortal({
           }
           chunkFormData.append("chunk", chunkBlob, file.name);
 
-          // Toleransi retry otomatis hingga 3 kali jika sinyal HP naik-turun
+          // Toleransi retry otomatis hingga 5 kali jika sinyal HP naik-turun
           let chunkSuccess = false;
           let lastChunkError: any = null;
 
-          for (let retry = 0; retry < 3; retry++) {
+          for (let retry = 0; retry < 5; retry++) {
             try {
               const chunkRes = await fetch("/api/upload/chunk", {
                 method: "POST",
@@ -732,10 +757,18 @@ export function PublicUploadPortal({
               }
             } catch (err: any) {
               lastChunkError = err;
+              const retryPercent = Math.min(
+                95,
+                Math.max(15, Math.round((totalUploadedBytes / totalAllBytes) * 90))
+              );
+              updateSwalLoading(
+                `2/3 Sinyal terganggu, mencoba ulang bagian berkas (${retry + 1}/5)...`,
+                retryPercent
+              );
             }
 
-            // Tunggu sebelum mencoba kirim ulang potongan
-            await new Promise((r) => setTimeout(r, 1000 * (retry + 1)));
+            // Tunggu sebelum mencoba kirim ulang potongan (progressive backoff)
+            await new Promise((r) => setTimeout(r, 1200 * (retry + 1)));
           }
 
           if (!chunkSuccess) {
@@ -751,13 +784,13 @@ export function PublicUploadPortal({
 
           // Perbarui indikator progress SweetAlert dan progress bar secara akurat
           const overallPercent = Math.min(
-            96,
-            Math.max(15, Math.round((totalUploadedBytes / totalAllBytes) * 92))
+            95,
+            Math.max(15, Math.round((totalUploadedBytes / totalAllBytes) * 90))
           );
           setUploadProgress(overallPercent);
 
           updateSwalLoading(
-            `2/3 Mengunggah ${fileLabel} (${fileIdx + 1}/${readyFiles.length}): ${formatBytes(
+            `2/3 Mengunggah ke Google Drive: ${fileLabel} (${fileIdx + 1}/${readyFiles.length}): ${formatBytes(
               totalUploadedBytes
             )} dari ${formatBytes(totalAllBytes)}...`,
             overallPercent
@@ -765,19 +798,84 @@ export function PublicUploadPortal({
         }
       }
 
-      // 3. Selesai! Siapkan Tanda Terima
+      // 3. Semua berkas berhasil tersimpan di Google Drive! Catat submisi & berkas ke database
+      setUploadProgress(96);
+      updateSwalLoading(
+        "3/3 Berkas tersimpan di Google Drive! Menyimpan pencatatan ke database...",
+        96
+      );
+
+      let completeRes: Response | null = null;
+      let completeError: any = null;
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          completeRes = await fetch("/api/upload/complete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              categoryId: selectedCategory.id,
+              madrasah: selectedMadrasah,
+              activityDate,
+              submitterName: submitterName.trim() || null,
+              submitterContact: submitterContact.trim() || null,
+              notes: notes.trim() || null,
+              fieldsData: fieldAnswers,
+              allowSupplementary,
+              replaceSubmissionId:
+                replacePrevious && duplicateInfo?.existingSubmission
+                  ? duplicateInfo.existingSubmission.id
+                  : null,
+              submissionFolderName: initData.submissionFolderName,
+              submissionFolderUrl: initData.submissionFolderUrl,
+              targetFolderId: initData.targetFolderId,
+              files: uploadedFilesResults,
+            }),
+          });
+          if (completeRes.ok) break;
+        } catch (e: any) {
+          completeError = e;
+          if (attempt < 2) {
+            updateSwalLoading(
+              `3/3 Berkas aman di Google Drive, mencatat ke database (mencoba ${attempt + 2}/3)...`,
+              96
+            );
+            await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)));
+          }
+        }
+      }
+
+      if (!completeRes) {
+        throw (
+          completeError ||
+          new Error("Semua berkas telah berhasil tersimpan di Google Drive, namun konfirmasi pencatatan ke database terkendala. Silakan coba lagi.")
+        );
+      }
+
+      const completeText = await completeRes.text();
+      let completeData: any = null;
+      try {
+        completeData = JSON.parse(completeText);
+      } catch {}
+
+      if (!completeRes.ok || !completeData?.success) {
+        throw new Error(
+          completeData?.error || `Gagal mencatat submisi ke database (kode ${completeRes.status}).`
+        );
+      }
+
       setUploadProgress(100);
-      updateSwalLoading("3/3 Unggahan selesai! Menyiapkan tanda terima arsip...", 100);
+      updateSwalLoading("3/3 Pengarsipan selesai! Menyiapkan tanda terima...", 100);
 
       const finalResult = {
         success: true,
-        submissionId: initData.submissionId,
-        categoryName: initData.categoryName,
-        submissionFolderName: initData.submissionFolderName,
-        submissionFolderUrl: initData.submissionFolderUrl,
-        filesCount: uploadedFilesResults.length,
-        files: uploadedFilesResults,
-        message: "Berkas dan data formulir berhasil dikirim dan tersimpan rapi di Google Drive!",
+        submissionId: completeData.submissionId,
+        categoryName: completeData.categoryName || initData.categoryName,
+        submissionFolderName: completeData.submissionFolderName || initData.submissionFolderName,
+        submissionFolderUrl: completeData.submissionFolderUrl || initData.submissionFolderUrl,
+        filesCount: completeData.filesCount || uploadedFilesResults.length,
+        files: completeData.files || uploadedFilesResults,
+        message: completeData.message || "Berkas dan data formulir berhasil dikirim dan tersimpan rapi di Google Drive!",
       };
 
       setTimeout(() => {
@@ -1296,7 +1394,7 @@ export function PublicUploadPortal({
                               {isSelected ? "● Terpilih Otomatis" : "Pilih Kategori"}
                             </span>
                             <span className="text-[10px] text-muted-foreground">
-                              Maks. {cat.maxFileSizeMb} MB
+                              Maks. {cat.maxFileSizeMb || 500} MB
                             </span>
                           </div>
                         </div>
@@ -1665,7 +1763,7 @@ export function PublicUploadPortal({
                           Pilih Berkas Foto & Video Dokumentasi
                         </CardTitle>
                         <CardDescription className="text-[11px] sm:text-xs text-muted-foreground mt-0.5">
-                          Maksimal {selectedCategory.maxFileSizeMb} MB per berkas. Mendukung pengunggahan banyak berkas sekaligus.
+                          Maksimal {selectedCategory.maxFileSizeMb || 500} MB per berkas. Mendukung pengunggahan banyak berkas sekaligus.
                         </CardDescription>
                       </div>
                     </div>
@@ -1741,11 +1839,11 @@ export function PublicUploadPortal({
                       <FileUploadZone
                         files={photoFiles}
                         onFilesChange={setPhotoFiles}
-                        maxFileSizeMb={selectedCategory.maxFileSizeMb}
+                        maxFileSizeMb={selectedCategory.maxFileSizeMb || 500}
                         targetType="IMAGE"
                         accentColor="emerald"
                         title="Pilih atau Tarik Foto ke Sini"
-                        description={`Format: JPG, JPEG, PNG, WEBP (Maks. ${selectedCategory.maxFileSizeMb} MB/foto)`}
+                        description={`Format: JPG, JPEG, PNG, WEBP (Maks. ${selectedCategory.maxFileSizeMb || 500} MB/foto)`}
                         badgeLabel="Bisa Banyak Foto Sekaligus"
                         disabled={isUploading}
                       />
@@ -1775,11 +1873,11 @@ export function PublicUploadPortal({
                       <FileUploadZone
                         files={videoFiles}
                         onFilesChange={setVideoFiles}
-                        maxFileSizeMb={selectedCategory.maxFileSizeMb}
+                        maxFileSizeMb={selectedCategory.maxFileSizeMb || 500}
                         targetType="VIDEO"
                         accentColor="blue"
                         title="Pilih atau Tarik Video ke Sini"
-                        description={`Format: MP4, MOV, MKV, WebM (Maks. ${selectedCategory.maxFileSizeMb} MB/video)`}
+                        description={`Format: MP4, MOV, MKV, WebM (Maks. ${selectedCategory.maxFileSizeMb || 500} MB/video)`}
                         badgeLabel="Opsional / Jika Ada Rekaman"
                         disabled={isUploading}
                       />

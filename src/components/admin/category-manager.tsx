@@ -72,7 +72,7 @@ export function CategoryManager({ initialCategories }: { initialCategories: Cate
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [driveFolderId, setDriveFolderId] = useState("");
-  const [maxFileSizeMb, setMaxFileSizeMb] = useState(100);
+  const [maxFileSizeMb, setMaxFileSizeMb] = useState(500);
   const [icon, setIcon] = useState("FolderArchive");
   const [isActive, setIsActive] = useState(true);
 
@@ -81,7 +81,7 @@ export function CategoryManager({ initialCategories }: { initialCategories: Cate
     setName("");
     setDescription("");
     setDriveFolderId("");
-    setMaxFileSizeMb(100);
+    setMaxFileSizeMb(500);
     setIcon("FolderArchive");
     setIsActive(true);
   };
@@ -96,7 +96,7 @@ export function CategoryManager({ initialCategories }: { initialCategories: Cate
     setName(cat.name);
     setDescription(cat.description || "");
     setDriveFolderId(cat.driveFolderId || "");
-    setMaxFileSizeMb(cat.maxFileSizeMb || 100);
+    setMaxFileSizeMb(cat.maxFileSizeMb || 500);
     setIcon(cat.icon || "FolderArchive");
     setIsActive(cat.isActive);
     setIsDialogOpen(true);
@@ -284,17 +284,23 @@ export function CategoryManager({ initialCategories }: { initialCategories: Cate
 
             <CardContent className="space-y-4 pt-0">
               {/* Stats badges */}
-              <div className="grid grid-cols-2 gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 text-xs">
+              <div className="grid grid-cols-3 gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 text-xs">
                 <div>
-                  <span className="text-[11px] text-muted-foreground block font-medium">Field Kustom</span>
+                  <span className="text-[11px] text-muted-foreground block font-medium">Field</span>
                   <span className="font-extrabold text-slate-800 dark:text-slate-100 text-sm">
-                    {cat.fields?.length ?? 0} Pertanyaan
+                    {cat.fields?.length ?? 0} Kolom
                   </span>
                 </div>
                 <div>
-                  <span className="text-[11px] text-muted-foreground block font-medium">Berkas Masuk</span>
+                  <span className="text-[11px] text-muted-foreground block font-medium">Berkas</span>
                   <span className="font-extrabold text-emerald-600 dark:text-emerald-400 text-sm">
-                    {cat._count?.files ?? 0} Berkas
+                    {cat._count?.files ?? 0} File
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-muted-foreground block font-medium">Batas File</span>
+                  <span className="font-extrabold text-sky-600 dark:text-sky-400 text-sm">
+                    {cat.maxFileSizeMb || 500} MB
                   </span>
                 </div>
               </div>
@@ -390,32 +396,61 @@ export function CategoryManager({ initialCategories }: { initialCategories: Cate
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="cat-size">Maks. File (MB)</Label>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="cat-size">Maks. Ukuran File per Berkas (MB)</Label>
+                <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                  {maxFileSizeMb >= 1000 ? `${(maxFileSizeMb / 1024).toFixed(1)} GB` : `${maxFileSizeMb} MB`}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
                 <Input
                   id="cat-size"
                   type="number"
+                  min={10}
+                  max={2000}
                   value={maxFileSizeMb}
-                  onChange={(e) => setMaxFileSizeMb(parseInt(e.target.value, 10) || 50)}
+                  onChange={(e) => setMaxFileSizeMb(parseInt(e.target.value, 10) || 500)}
+                  className="flex-1 font-mono"
                 />
               </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="cat-icon">Pilihan Ikon</Label>
-                <select
-                  id="cat-icon"
-                  className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
-                  value={icon}
-                  onChange={(e) => setIcon(e.target.value)}
-                >
-                  <option value="FolderArchive">Folder Umum</option>
-                  <option value="Camera">Kamera / Dokumentasi</option>
-                  <option value="GraduationCap">Topi Wisuda / Siswa</option>
-                  <option value="Award">Piagam / Penghargaan</option>
-                  <option value="Sparkles">Bintang / Kreasi Pojok</option>
-                </select>
+              {/* Quick preset buttons */}
+              <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                <span className="text-[11px] text-muted-foreground mr-1">Preset cepat:</span>
+                {[100, 250, 500, 1000, 2000].map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => setMaxFileSizeMb(size)}
+                    className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      maxFileSizeMb === size
+                        ? "bg-emerald-600 text-white shadow-xs"
+                        : "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
+                    }`}
+                  >
+                    {size >= 1000 ? `${size / 1000} GB` : `${size} MB`}
+                  </button>
+                ))}
               </div>
+              <p className="text-[11px] text-muted-foreground">
+                Mendukung video resolusi tinggi berdurasi panjang (hingga 2000 MB / 2 GB). Unggahan menggunakan sistem chunked resumable Google Drive.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="cat-icon">Pilihan Ikon</Label>
+              <select
+                id="cat-icon"
+                className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                value={icon}
+                onChange={(e) => setIcon(e.target.value)}
+              >
+                <option value="FolderArchive">Folder Umum</option>
+                <option value="Camera">Kamera / Dokumentasi</option>
+                <option value="GraduationCap">Topi Wisuda / Siswa</option>
+                <option value="Award">Piagam / Penghargaan</option>
+                <option value="Sparkles">Bintang / Kreasi Pojok</option>
+              </select>
             </div>
 
             {editingId && (

@@ -94,7 +94,7 @@ export async function createCategory(formData: {
         driveFolderId: formData.driveFolderId || null,
         icon: formData.icon || "FolderArchive",
         color: formData.color || "emerald",
-        maxFileSizeMb: formData.maxFileSizeMb || 100,
+        maxFileSizeMb: formData.maxFileSizeMb || 500,
         allowedFileTypes: formData.allowedFileTypes || "image/*,video/*",
       },
     });

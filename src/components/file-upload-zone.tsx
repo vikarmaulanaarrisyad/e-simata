@@ -42,7 +42,7 @@ interface FileUploadZoneProps {
 export function FileUploadZone({
   files,
   onFilesChange,
-  maxFileSizeMb = 100,
+  maxFileSizeMb = 500,
   allowedTypes,
   disabled = false,
   targetType = "ALL",
@@ -132,7 +132,7 @@ export function FileUploadZone({
         const fileSizeMb = fileToUse.size / (1024 * 1024);
         if (fileSizeMb > maxFileSizeMb) {
           setErrorMsg(
-            `Berkas "${fileToUse.name}" melebihi batas ukuran maksimal (${maxFileSizeMb} MB).`
+            `Berkas "${fileToUse.name}" (${formatBytes(fileToUse.size)}) melebihi batas ukuran maksimal (${maxFileSizeMb} MB).`
           );
           continue;
         }

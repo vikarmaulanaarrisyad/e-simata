@@ -9,8 +9,16 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
 
-    const submissionId = formData.get("submissionId") as string;
-    const categoryId = formData.get("categoryId") as string;
+    const submissionIdRaw = formData.get("submissionId");
+    const submissionId =
+      typeof submissionIdRaw === "string" &&
+      submissionIdRaw !== "undefined" &&
+      submissionIdRaw !== "null" &&
+      submissionIdRaw.trim() !== ""
+        ? submissionIdRaw.trim()
+        : null;
+
+    const categoryId = (formData.get("categoryId") as string) || "";
     const cleanFileName = formData.get("cleanFileName") as string;
     const fileType = ((formData.get("fileType") as string) || "OTHER") as "IMAGE" | "VIDEO" | "OTHER";
     const mimeType = (formData.get("mimeType") as string) || "application/octet-stream";
@@ -44,11 +52,35 @@ export async function POST(req: NextRequest) {
     });
 
     if (result.isComplete && result.driveFile) {
-      // Simpan record UploadedFile ke database
-      const uploadedRecord = await prisma.uploadedFile.create({
-        data: {
-          submissionId,
-          categoryId,
+      // Simpan record UploadedFile ke database jika submissionId sudah tersedia (mode legacy)
+      let uploadedRecord = null;
+      if (submissionId) {
+        try {
+          uploadedRecord = await prisma.uploadedFile.create({
+            data: {
+              submissionId,
+              categoryId,
+              fileName: result.driveFile.name || cleanFileName,
+              fileSize: totalSize,
+              fileType: fileType,
+              mimeType: mimeType,
+              driveFileId: result.driveFile.fileId,
+              driveUrl: result.driveFile.webViewLink,
+              driveThumbnailUrl: result.driveFile.thumbnailLink || null,
+              driveFolderId: targetFolderId,
+              status: "SUCCESS",
+            },
+          });
+        } catch (dbErr) {
+          console.warn("[Chunk Upload DB Save Warning]", dbErr);
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        isComplete: true,
+        file: {
+          id: uploadedRecord ? uploadedRecord.id : null,
           fileName: result.driveFile.name || cleanFileName,
           fileSize: totalSize,
           fileType: fileType,
@@ -57,20 +89,6 @@ export async function POST(req: NextRequest) {
           driveUrl: result.driveFile.webViewLink,
           driveThumbnailUrl: result.driveFile.thumbnailLink || null,
           driveFolderId: targetFolderId,
-          status: "SUCCESS",
-        },
-      });
-
-      return NextResponse.json({
-        success: true,
-        isComplete: true,
-        file: {
-          id: uploadedRecord.id,
-          fileName: uploadedRecord.fileName,
-          fileSize: uploadedRecord.fileSize,
-          fileType: uploadedRecord.fileType,
-          driveUrl: uploadedRecord.driveUrl,
-          driveThumbnailUrl: uploadedRecord.driveThumbnailUrl,
           isMock: result.driveFile.isMock,
         },
       });

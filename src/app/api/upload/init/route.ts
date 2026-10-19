@@ -84,6 +84,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 3a. Validasi batas ukuran masing-masing berkas
+    const maxAllowedMb = category.maxFileSizeMb || 500;
+    for (const f of files) {
+      if (typeof f?.size === "number") {
+        const sizeMb = f.size / (1024 * 1024);
+        if (sizeMb > maxAllowedMb) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: `Berkas "${f.name}" (${sizeMb.toFixed(1)} MB) melebihi batas ukuran maksimal kategori (${maxAllowedMb} MB).`,
+            },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     // 3b. Deteksi pilihan kelas untuk verifikasi data ganda
     let selectedClass: string | null = null;
     const directClass = body.className || body.kelas || body.class;
@@ -139,109 +156,7 @@ export async function POST(req: NextRequest) {
       notes = notes ? `${notes} [Berkas Susulan]` : "[Berkas Susulan]";
     }
 
-    // 4. Jika replaceSubmissionId disertakan, hapus berkas-berkas lama dari Google Drive dan database
-    let existingSubmission = null;
-    if (replaceSubmissionId) {
-      existingSubmission = await prisma.submission.findUnique({
-        where: { id: replaceSubmissionId },
-        include: { files: true },
-      });
-
-      if (existingSubmission) {
-        const oldDriveIds = existingSubmission.files
-          .map((f) => f.driveFileId)
-          .filter((id): id is string => Boolean(id && id.trim() !== ""));
-
-        if (oldDriveIds.length > 0) {
-          try {
-            await deleteMultipleFilesFromDrive(oldDriveIds);
-          } catch (e) {
-            console.warn("[Upload Init Replace Delete Warning]", e);
-          }
-        }
-
-        await prisma.uploadedFile.deleteMany({
-          where: { submissionId: replaceSubmissionId },
-        });
-
-        await prisma.fieldValue.deleteMany({
-          where: { submissionId: replaceSubmissionId },
-        });
-      }
-    }
-
-    // 5. Buat atau perbarui record Submission di database
-    const combinedAnswers = {
-      ...fieldsData,
-      ...(activityDate ? { activityDate, tanggal_kegiatan: activityDate } : {}),
-      ...(selectedClass ? { kelas: selectedClass, rombel: selectedClass } : {}),
-    };
-
-    const now = new Date();
-    let creationDate = now;
-    if (activityDate) {
-      const parts = activityDate.split("-");
-      if (parts.length === 3 && parts[0].length === 4) {
-        const timeWibStr = new Intl.DateTimeFormat("en-GB", {
-          timeZone: "Asia/Jakarta",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: false,
-        }).format(now);
-
-        creationDate = new Date(`${activityDate}T${timeWibStr}+07:00`);
-      }
-    }
-
-    let submission;
-    if (replaceSubmissionId && existingSubmission) {
-      submission = await prisma.submission.update({
-        where: { id: replaceSubmissionId },
-        data: {
-          madrasah: madrasah || existingSubmission.madrasah,
-          submitterName: submitterName || existingSubmission.submitterName,
-          submitterContact: submitterContact || existingSubmission.submitterContact,
-          notes: notes !== null ? notes : existingSubmission.notes,
-          answersJson: combinedAnswers,
-          createdAt: activityDate ? creationDate : existingSubmission.createdAt,
-          updatedAt: new Date(),
-        },
-      });
-    } else {
-      submission = await prisma.submission.create({
-        data: {
-          categoryId: category.id,
-          madrasah,
-          submitterName,
-          submitterContact,
-          notes,
-          answersJson: combinedAnswers,
-          createdAt: creationDate,
-        },
-      });
-    }
-
-    // 6. Simpan isian FieldValue
-    const fieldValuePromises = category.fields.map((field) => {
-      const val = fieldsData[field.name];
-      if (val !== undefined && val !== null && val !== "") {
-        const strVal = typeof val === "object" ? JSON.stringify(val) : String(val);
-        return prisma.fieldValue.create({
-          data: {
-            submissionId: submission.id,
-            fieldId: field.id,
-            fieldName: field.name,
-            fieldLabel: field.label,
-            value: strVal,
-          },
-        });
-      }
-      return Promise.resolve(null);
-    });
-    await Promise.all(fieldValuePromises);
-
-    // 7. Siapkan hierarki folder Google Drive
+    // 4. Siapkan hierarki folder Google Drive
     const baseFolderId = category.driveFolderId || process.env.GOOGLE_DRIVE_FOLDER_ID || null;
     const folderStructure = await setupSubmissionFolder({
       categoryName: category.name,
@@ -254,7 +169,7 @@ export async function POST(req: NextRequest) {
 
     const targetFolderId = folderStructure.submissionFolderId;
 
-    // 8. Buat Sesi Resumable Upload Google Drive untuk setiap berkas
+    // 5. Buat Sesi Resumable Upload Google Drive untuk setiap berkas
     const fileSessions = await Promise.all(
       files.map(async (fileItem: { name: string; size: number; type: string }, idx: number) => {
         const isImage = fileItem.type.startsWith("image/");
@@ -294,7 +209,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      submissionId: submission.id,
       categoryName: category.name,
       submissionFolderName: folderStructure.submissionFolderName,
       submissionFolderUrl: folderStructure.submissionFolderUrl,

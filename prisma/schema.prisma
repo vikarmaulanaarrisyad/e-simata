@@ -43,7 +43,7 @@ model Category {
   color            String?       @default("emerald")
   isActive         Boolean       @default(true)
   allowedFileTypes String?       @default("image/*,video/*")
-  maxFileSizeMb    Int           @default(50)
+  maxFileSizeMb    Int           @default(500)
   orderIndex       Int           @default(0)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
