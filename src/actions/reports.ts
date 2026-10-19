@@ -5,7 +5,10 @@ import prisma from "@/lib/prisma";
 export interface ReportQueryParams {
   categoryId?: string;
   date?: string; // YYYY-MM-DD
+  startDate?: string;
+  endDate?: string;
   madrasah?: string;
+  kelas?: string;
 }
 
 export interface ReportSubmissionItem {
@@ -17,6 +20,8 @@ export interface ReportSubmissionItem {
   submitterName: string;
   submitterContact?: string | null;
   notes?: string | null;
+  studentCount?: string | null;
+  answersJson?: any;
   createdAt: string;
   timeFormatted: string;
   dateFormatted: string;
@@ -29,11 +34,27 @@ export interface ReportSubmissionItem {
     fileName: string;
     fileSize: number;
     fileType: string;
+    driveFileId?: string;
     driveUrl: string;
     driveThumbnailUrl?: string | null;
     driveFolderId?: string | null;
   }>;
 }
+
+const DEFAULT_STANDARD_CLASSES = [
+  "Kelas 1 A",
+  "Kelas 1 B",
+  "Kelas 2 A",
+  "Kelas 2 B",
+  "Kelas 3 A",
+  "Kelas 3 B",
+  "Kelas 4 A",
+  "Kelas 4 B",
+  "Kelas 5 A",
+  "Kelas 5 B",
+  "Kelas 6 A",
+  "Kelas 6 B",
+];
 
 export async function getReportData(params: ReportQueryParams) {
   try {
@@ -56,28 +77,63 @@ export async function getReportData(params: ReportQueryParams) {
       return { success: false, error: "Kategori tidak ditemukan." };
     }
 
-    // 2. Tentukan rentang waktu 00:00:00 s.d. 23:59:59 WIB untuk tanggal yang dipilih
-    let targetDate = new Date();
-    if (params.date) {
-      const parts = params.date.split("-");
-      if (parts.length === 3) {
-        targetDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    // 2. Tentukan rentang waktu WIB (Asia/Jakarta UTC+7)
+    let startOfDayWIB: Date;
+    let endOfDayWIB: Date;
+    let dateFormatted = "";
+    let rawDate = "";
+
+    if (params.startDate && params.endDate) {
+      startOfDayWIB = new Date(`${params.startDate}T00:00:00+07:00`);
+      endOfDayWIB = new Date(`${params.endDate}T23:59:59.999+07:00`);
+
+      const startParts = params.startDate.split("-");
+      const endParts = params.endDate.split("-");
+      const sObj = new Date(parseInt(startParts[0], 10), parseInt(startParts[1], 10) - 1, parseInt(startParts[2], 10));
+      const eObj = new Date(parseInt(endParts[0], 10), parseInt(endParts[1], 10) - 1, parseInt(endParts[2], 10));
+
+      const dtFormat = new Intl.DateTimeFormat("id-ID", {
+        timeZone: "Asia/Jakarta",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+
+      dateFormatted = `${dtFormat.format(sObj)} s.d. ${dtFormat.format(eObj)}`;
+      rawDate = `${params.startDate}_sd_${params.endDate}`;
+    } else {
+      let targetDate = new Date();
+      if (params.date) {
+        const parts = params.date.split("-");
+        if (parts.length === 3) {
+          targetDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        }
       }
+
+      const formatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Jakarta",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      const parts = formatter.formatToParts(targetDate);
+      const year = parts.find((p) => p.type === "year")!.value;
+      const month = parts.find((p) => p.type === "month")!.value;
+      const day = parts.find((p) => p.type === "day")!.value;
+
+      startOfDayWIB = new Date(`${year}-${month}-${day}T00:00:00+07:00`);
+      endOfDayWIB = new Date(`${year}-${month}-${day}T23:59:59.999+07:00`);
+
+      dateFormatted = new Intl.DateTimeFormat("id-ID", {
+        timeZone: "Asia/Jakarta",
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }).format(targetDate);
+
+      rawDate = `${year}-${month}-${day}`;
     }
-
-    const formatter = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Jakarta",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    const parts = formatter.formatToParts(targetDate);
-    const year = parts.find((p) => p.type === "year")!.value;
-    const month = parts.find((p) => p.type === "month")!.value;
-    const day = parts.find((p) => p.type === "day")!.value;
-
-    const startOfDayWIB = new Date(`${year}-${month}-${day}T00:00:00+07:00`);
-    const endOfDayWIB = new Date(`${year}-${month}-${day}T23:59:59.999+07:00`);
 
     // 3. Bangun query Prisma
     const where: any = {
@@ -116,19 +172,10 @@ export async function getReportData(params: ReportQueryParams) {
       }),
     ]);
 
-    // Format tanggal Indonesia
-    const dateFormatted = new Intl.DateTimeFormat("id-ID", {
-      timeZone: "Asia/Jakarta",
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    }).format(targetDate);
-
     // 4. Transform data submisi
     const submissions: ReportSubmissionItem[] = (submissionsRaw as any[]).map((sub: any) => {
       const answers = (sub.answersJson as Record<string, any>) || {};
-      const kelas =
+      const rawKelas =
         answers.kelas ||
         answers.rombel ||
         sub.fieldValues?.find(
@@ -138,11 +185,44 @@ export async function getReportData(params: ReportQueryParams) {
         )?.value ||
         "-";
 
+      const kelas = rawKelas.trim();
+
       const timeFormatted = new Intl.DateTimeFormat("id-ID", {
         timeZone: "Asia/Jakarta",
         hour: "2-digit",
         minute: "2-digit",
       }).format(sub.createdAt);
+
+      const subDateFormatted = new Intl.DateTimeFormat("id-ID", {
+        timeZone: "Asia/Jakarta",
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }).format(sub.createdAt);
+
+      const notes =
+        sub.notes ||
+        answers.catatan_wali_kelas ||
+        answers.catatan ||
+        answers.notes ||
+        sub.fieldValues?.find(
+          (fv: any) =>
+            fv.fieldLabel?.toLowerCase().includes("catatan") ||
+            fv.fieldName?.toLowerCase().includes("catatan")
+        )?.value ||
+        null;
+
+      const studentCount =
+        answers.jumlah_siswa ||
+        answers.studentCount ||
+        answers.total_siswa ||
+        sub.fieldValues?.find(
+          (fv: any) =>
+            fv.fieldLabel?.toLowerCase().includes("jumlah") ||
+            fv.fieldName?.toLowerCase().includes("siswa")
+        )?.value ||
+        null;
 
       return {
         id: sub.id,
@@ -152,10 +232,12 @@ export async function getReportData(params: ReportQueryParams) {
         kelas,
         submitterName: sub.submitterName || "Wali Kelas",
         submitterContact: sub.submitterContact,
-        notes: sub.notes,
+        notes,
+        studentCount,
+        answersJson: answers,
         createdAt: sub.createdAt ? new Date(sub.createdAt).toISOString() : new Date().toISOString(),
         timeFormatted: `${timeFormatted} WIB`,
-        dateFormatted,
+        dateFormatted: subDateFormatted,
         fieldValues: (sub.fieldValues || []).map((fv: any) => ({
           label: fv.fieldLabel || fv.fieldName || fv.field?.label || "",
           value: fv.value,
@@ -165,6 +247,7 @@ export async function getReportData(params: ReportQueryParams) {
           fileName: f.fileName,
           fileSize: f.fileSize,
           fileType: f.fileType,
+          driveFileId: f.driveFileId,
           driveUrl: f.driveUrl,
           driveThumbnailUrl: f.driveThumbnailUrl,
           driveFolderId: f.driveFolderId,
@@ -177,6 +260,33 @@ export async function getReportData(params: ReportQueryParams) {
       return a.kelas.localeCompare(b.kelas, undefined, { numeric: true, sensitivity: "base" });
     });
 
+    // 6. Susun master daftar kelas (Standard + dari Custom Field + dari Submisi)
+    const kelasCustomField = category.fields?.find(
+      (f: any) =>
+        f.name?.toLowerCase() === "kelas" ||
+        f.label?.toLowerCase().includes("kelas")
+    );
+    let categoryClasses: string[] = DEFAULT_STANDARD_CLASSES;
+    if (kelasCustomField && Array.isArray(kelasCustomField.options) && kelasCustomField.options.length > 0) {
+      categoryClasses = kelasCustomField.options as string[];
+    }
+
+    const availableClassesSet = new Set<string>(categoryClasses);
+    submissions.forEach((s) => {
+      if (s.kelas && s.kelas !== "-") availableClassesSet.add(s.kelas);
+    });
+    const availableClasses = Array.from(availableClassesSet).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+    );
+
+    // Hitung jumlah submisi per kelas
+    const submissionCountByClass: Record<string, number> = {};
+    availableClasses.forEach((cls) => {
+      submissionCountByClass[cls] = submissions.filter(
+        (s) => s.kelas.toLowerCase() === cls.toLowerCase()
+      ).length;
+    });
+
     // Hitung total berkas
     const totalFilesCount = submissions.reduce((acc, curr) => acc + curr.files.length, 0);
 
@@ -185,11 +295,14 @@ export async function getReportData(params: ReportQueryParams) {
       report: {
         category,
         dateFormatted,
-        rawDate: `${year}-${month}-${day}`,
+        rawDate,
         madrasahFilter: params.madrasah || "all",
+        kelasFilter: params.kelas || "all",
         totalSubmissions: submissions.length,
         totalFiles: totalFilesCount,
         submissions,
+        availableClasses,
+        submissionCountByClass,
         categories: allCategories,
         madrasahs,
       },

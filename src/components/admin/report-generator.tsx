@@ -16,6 +16,15 @@ import {
   ZoomOut,
   Maximize2,
   FileCheck2,
+  Grid,
+  Layers,
+  LayoutGrid,
+  Filter,
+  Check,
+  Eye,
+  Quote,
+  Users,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +38,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { getReportData, ReportSubmissionItem } from "@/actions/reports";
 import { showSwalLoading, closeSwal, showSwalError } from "@/lib/swal";
 import { toast } from "sonner";
@@ -50,6 +66,27 @@ interface FlattenedMediaItem {
   file: ReportSubmissionItem["files"][number];
 }
 
+interface RombelGroup {
+  key: string;
+  kelas: string;
+  cleanKelas: string;
+  madrasah: string;
+  madrasahBadge: string;
+  submitterName: string;
+  studentCount?: string | null;
+  timeFormatted: string;
+  notes?: string | null;
+  photos: FlattenedMediaItem[];
+  videos: FlattenedMediaItem[];
+}
+
+interface RombelFullPhotoPage {
+  rombel: RombelGroup;
+  photos: FlattenedMediaItem[];
+  partIndex: number;
+  totalParts: number;
+}
+
 export function ReportGenerator({
   initialCategories,
   initialMadrasahs,
@@ -62,8 +99,20 @@ export function ReportGenerator({
   const [selectedCategory, setSelectedCategory] = useState<string>(
     initialCategories[0]?.id || ""
   );
+  const [dateMode, setDateMode] = useState<"single" | "range">("single");
   const [selectedDate, setSelectedDate] = useState<string>(todayISO);
+  const [startDate, setStartDate] = useState<string>(todayISO);
+  const [endDate, setEndDate] = useState<string>(todayISO);
   const [selectedMadrasah, setSelectedMadrasah] = useState<string>("all");
+  const [selectedKelas, setSelectedKelas] = useState<string>("all");
+
+  // Mode Tata Letak Lampiran Foto:
+  // - "rombel-full": 1 Rombel per Halaman (Eksklusif, Foto Luas & Sangat Rapi)
+  // - "rombel-compact": 2 Rombel per Halaman (Kompak & Hemat Kertas)
+  // - "grid-flat": Grid Campuran (6 Foto per Halaman)
+  const [photoLayoutMode, setPhotoLayoutMode] = useState<
+    "rombel-full" | "rombel-compact" | "grid-flat"
+  >("rombel-full");
 
   const [includePhotos, setIncludePhotos] = useState<boolean>(true);
   const [includeVideos, setIncludeVideos] = useState<boolean>(true);
@@ -73,9 +122,19 @@ export function ReportGenerator({
   const [headmasterNip, setHeadmasterNip] = useState<string>("19750812 200501 1 003");
   const [coordinatorName, setCoordinatorName] = useState<string>("Vikar Maulana Arrisyad, S.Kom.");
   const [coordinatorNip, setCoordinatorNip] = useState<string>("19920415 201903 1 008");
+  const [waliKelasName, setWaliKelasName] = useState<string>("");
+  const [waliKelasNip, setWaliKelasNip] = useState<string>("-");
 
   // Zoom control untuk pratinjau F4 Landscape di layar
   const [previewZoom, setPreviewZoom] = useState<number>(100);
+
+  // Modal zoom pratinjau gambar di layar
+  const [modalImage, setModalImage] = useState<{
+    src: string;
+    title: string;
+    rombel: string;
+    notes?: string | null;
+  } | null>(null);
 
   // Report Data
   const [reportData, setReportData] = useState<{
@@ -83,9 +142,12 @@ export function ReportGenerator({
     dateFormatted: string;
     rawDate: string;
     madrasahFilter: string;
+    kelasFilter?: string;
     totalSubmissions: number;
     totalFiles: number;
     submissions: ReportSubmissionItem[];
+    availableClasses?: string[];
+    submissionCountByClass?: Record<string, number>;
     categories: CategoryOption[];
     madrasahs: MadrasahOption[];
   } | null>(null);
@@ -99,17 +161,24 @@ export function ReportGenerator({
       if (!isSilent) {
         showSwalLoading({
           title: "Menyusun Laporan...",
-          stepText: "Mengumpulkan rekapitulasi data rombel & berkas Google Drive...",
+          stepText: "Mengumpulkan data rombel & berkas dokumentasi...",
           progressPercent: 50,
         });
       }
 
       try {
-        const res = await getReportData({
+        const queryParams: any = {
           categoryId: selectedCategory,
-          date: selectedDate,
           madrasah: selectedMadrasah,
-        });
+        };
+        if (dateMode === "single") {
+          queryParams.date = selectedDate;
+        } else {
+          queryParams.startDate = startDate;
+          queryParams.endDate = endDate;
+        }
+
+        const res = await getReportData(queryParams);
 
         if (!isSilent) {
           closeSwal();
@@ -141,73 +210,249 @@ export function ReportGenerator({
     } else {
       loadReport(false);
     }
-  }, [selectedCategory, selectedDate, selectedMadrasah]);
+  }, [selectedCategory, selectedDate, selectedMadrasah, dateMode, startDate, endDate]);
 
-  // Pisahkan file Foto dan Video
-  const { photoItems, videoItems } = useMemo(() => {
-    const allItems: FlattenedMediaItem[] = (reportData?.submissions || []).flatMap((sub) =>
-      sub.files.map((file) => ({ sub, file }))
+  // Master kelas standar
+  const DEFAULT_CLASSES = useMemo(
+    () => [
+      "Kelas 1 A",
+      "Kelas 1 B",
+      "Kelas 2 A",
+      "Kelas 2 B",
+      "Kelas 3 A",
+      "Kelas 3 B",
+      "Kelas 4 A",
+      "Kelas 4 B",
+      "Kelas 5 A",
+      "Kelas 5 B",
+      "Kelas 6 A",
+      "Kelas 6 B",
+    ],
+    []
+  );
+
+  // Daftar opsi kelas yang tersedia (gabungan master + dari kategori + dari data)
+  const availableClasses = useMemo(() => {
+    if (reportData?.availableClasses && reportData.availableClasses.length > 0) {
+      return reportData.availableClasses;
+    }
+    const set = new Set<string>(DEFAULT_CLASSES);
+    (reportData?.submissions || []).forEach((sub) => {
+      if (sub.kelas && sub.kelas !== "-") set.add(sub.kelas);
+    });
+    return Array.from(set).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
     );
+  }, [reportData, DEFAULT_CLASSES]);
 
-    const photos = allItems.filter(
-      ({ file }) =>
-        file.fileType === "IMAGE" ||
-        (!file.fileType?.includes("VIDEO") && !file.fileName.match(/\.(mp4|mov|avi|mkv|webm)$/i))
+  // Jumlah submisi per kelas untuk indikator badge
+  const submissionCountByClass = useMemo<Record<string, number>>(() => {
+    if (reportData?.submissionCountByClass) {
+      return reportData.submissionCountByClass;
+    }
+    const counts: Record<string, number> = {};
+    availableClasses.forEach((cls) => {
+      counts[cls] = (reportData?.submissions || []).filter(
+        (s) => s.kelas.toLowerCase() === cls.toLowerCase()
+      ).length;
+    });
+    return counts;
+  }, [reportData, availableClasses]);
+
+  // Submisi yang sudah difilter kelas jika ada
+  const filteredSubmissions = useMemo(() => {
+    const list = reportData?.submissions || [];
+    if (selectedKelas === "all") return list;
+    return list.filter((sub) => sub.kelas.toLowerCase() === selectedKelas.toLowerCase());
+  }, [reportData, selectedKelas]);
+
+  // Data submisi spesifik untuk kelas yang dipilih saat ini
+  const selectedClassInfo = useMemo(() => {
+    if (selectedKelas === "all") return null;
+    return (
+      (reportData?.submissions || []).find(
+        (s) => s.kelas.toLowerCase() === selectedKelas.toLowerCase()
+      ) || null
     );
+  }, [reportData, selectedKelas]);
 
-    const videos = allItems.filter(
-      ({ file }) =>
-        file.fileType === "VIDEO" ||
-        Boolean(file.fileName.match(/\.(mp4|mov|avi|mkv|webm)$/i))
+  // Otomatis sinkronkan nama wali kelas saat memilih rombel/kelas
+  useEffect(() => {
+    if (selectedKelas !== "all") {
+      if (selectedClassInfo?.submitterName) {
+        setWaliKelasName(selectedClassInfo.submitterName);
+      } else {
+        setWaliKelasName("");
+      }
+    }
+  }, [selectedKelas, selectedClassInfo]);
+
+  // Kelompokkan data submisi & foto berdasarkan Rombel / Kelas
+  const rombelGroups = useMemo<RombelGroup[]>(() => {
+    const map = new Map<string, RombelGroup>();
+
+    filteredSubmissions.forEach((sub) => {
+      const groupKey = `${sub.kelas}___${sub.madrasah}`;
+      const photos: FlattenedMediaItem[] = sub.files
+        .filter(
+          (file) =>
+            file.fileType === "IMAGE" ||
+            (!file.fileType?.includes("VIDEO") && !file.fileName.match(/\.(mp4|mov|avi|mkv|webm)$/i))
+        )
+        .map((file) => ({ sub, file }));
+
+      const videos: FlattenedMediaItem[] = sub.files
+        .filter(
+          (file) =>
+            file.fileType === "VIDEO" ||
+            Boolean(file.fileName.match(/\.(mp4|mov|avi|mkv|webm)$/i))
+        )
+        .map((file) => ({ sub, file }));
+
+      if (!map.has(groupKey)) {
+        const rawKelas = sub.kelas || "-";
+        const cleanKelas = rawKelas.toLowerCase().startsWith("kelas")
+          ? rawKelas
+          : `Kelas ${rawKelas}`;
+        const madrasahBadge = sub.madrasah.includes("01")
+          ? "MI 01"
+          : sub.madrasah.includes("02")
+          ? "MI 02"
+          : "MI BH";
+
+        map.set(groupKey, {
+          key: groupKey,
+          kelas: sub.kelas,
+          cleanKelas,
+          madrasah: sub.madrasah,
+          madrasahBadge,
+          submitterName: sub.submitterName,
+          studentCount: sub.studentCount,
+          timeFormatted: sub.timeFormatted,
+          notes: sub.notes,
+          photos,
+          videos,
+        });
+      } else {
+        const existing = map.get(groupKey)!;
+        existing.photos.push(...photos);
+        existing.videos.push(...videos);
+        if (!existing.notes && sub.notes) existing.notes = sub.notes;
+        if (!existing.studentCount && sub.studentCount)
+          existing.studentCount = sub.studentCount;
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) =>
+      a.kelas.localeCompare(b.kelas, undefined, { numeric: true, sensitivity: "base" })
     );
+  }, [filteredSubmissions]);
 
-    return { photoItems: photos, videoItems: videos };
-  }, [reportData]);
+  // Rombel yang memiliki foto
+  const rombelsWithPhotos = useMemo(() => {
+    return rombelGroups.filter((rg) => rg.photos.length > 0);
+  }, [rombelGroups]);
 
-  // Hitung jumlah halaman untuk laporan F4 Landscape
-  // Halaman 1: Rekapitulasi Rombel (hingga 8 baris, jika ada sisa berlanjut)
-  const submissionsList = reportData?.submissions || [];
+  // Kumpulan foto dan video datar (untuk mode grid-flat dan video page)
+  const { flatPhotos, flatVideos } = useMemo(() => {
+    const photos: FlattenedMediaItem[] = rombelGroups.flatMap((rg) => rg.photos);
+    const videos: FlattenedMediaItem[] = rombelGroups.flatMap((rg) => rg.videos);
+    return { flatPhotos: photos, flatVideos: videos };
+  }, [rombelGroups]);
+
+  // Mode 1: Halaman Foto 1 Rombel per Halaman (Eksklusif & Rapi)
+  // Maksimal 6 foto per halaman untuk 1 rombel; jika rombel punya >6 foto, lanjut ke bagian 2
+  const rombelFullPages = useMemo<RombelFullPhotoPage[]>(() => {
+    if (!includePhotos || rombelsWithPhotos.length === 0) return [];
+    const pages: RombelFullPhotoPage[] = [];
+
+    rombelsWithPhotos.forEach((rg) => {
+      const chunkSize = 6;
+      const totalParts = Math.ceil(rg.photos.length / chunkSize) || 1;
+      for (let p = 0; p < totalParts; p++) {
+        pages.push({
+          rombel: rg,
+          photos: rg.photos.slice(p * chunkSize, (p + 1) * chunkSize),
+          partIndex: p,
+          totalParts,
+        });
+      }
+    });
+
+    return pages;
+  }, [includePhotos, rombelsWithPhotos]);
+
+  // Mode 2: Halaman Foto 2 Rombel per Halaman (Kompak & Hemat Kertas)
+  const rombelCompactPairs = useMemo<RombelGroup[][]>(() => {
+    if (!includePhotos || rombelsWithPhotos.length === 0) return [];
+    const pairs: RombelGroup[][] = [];
+    for (let i = 0; i < rombelsWithPhotos.length; i += 2) {
+      pairs.push(rombelsWithPhotos.slice(i, i + 2));
+    }
+    return pairs;
+  }, [includePhotos, rombelsWithPhotos]);
+
+  // Mode 3: Halaman Foto Campuran (6 Foto per Halaman Flat)
+  const photoChunksFlat = useMemo<FlattenedMediaItem[][]>(() => {
+    if (!includePhotos || flatPhotos.length === 0) return [];
+    const chunks: FlattenedMediaItem[][] = [];
+    for (let i = 0; i < flatPhotos.length; i += 6) {
+      chunks.push(flatPhotos.slice(i, i + 6));
+    }
+    return chunks;
+  }, [includePhotos, flatPhotos]);
+
+  // Hitung jumlah baris tabel rekapitulasi di Halaman 1
+  const submissionsList = filteredSubmissions;
   const primaryTableRows = submissionsList.slice(0, 8);
   const overflowTableRows = submissionsList.slice(8);
   const hasOverflowTable = overflowTableRows.length > 0;
 
-  // Foto: 6 foto per halaman (grid 3 x 2)
-  const photoChunks: FlattenedMediaItem[][] = useMemo(() => {
-    if (!includePhotos || photoItems.length === 0) return [];
-    const chunks: FlattenedMediaItem[][] = [];
-    for (let i = 0; i < photoItems.length; i += 6) {
-      chunks.push(photoItems.slice(i, i + 6));
-    }
-    return chunks;
-  }, [includePhotos, photoItems]);
+  // Halaman Video
+  const hasVideoPage = includeVideos && flatVideos.length > 0;
 
-  // Video: tabel video
-  const hasVideoPage = includeVideos && videoItems.length > 0;
-
-  // Total Halaman
+  // Total Halaman Dokumen F4 Landscape
   const totalPages = useMemo(() => {
-    let count = 1; // Halaman 1
+    let count = 1; // Halaman 1: Rekapitulasi Rombel
     if (hasOverflowTable) count += 1;
-    count += photoChunks.length;
-    if (hasVideoPage) count += 1;
 
-    // Jika lampiran banyak dan tidak ada ruang di halaman terakhir untuk TTD, tambah lembar pengesahan
-    // Bila hanya halaman 1 dan data <= 8 tanpa foto & video, TTD muat di hal 1.
-    const isSinglePage =
-      count === 1 && !hasOverflowTable && photoChunks.length === 0 && !hasVideoPage;
-    if (!isSinglePage && includeSignatures) {
-      // Jika halaman terakhir berupa video dan videonya sedikit (<= 4), TTD bisa di lembar video.
-      // Jika halaman terakhir adalah foto penuh (6 foto), buat halaman pengesahan tersendiri.
-      const lastIsFullPhoto =
-        !hasVideoPage &&
-        photoChunks.length > 0 &&
-        photoChunks[photoChunks.length - 1].length > 3;
-      if (lastIsFullPhoto) {
-        count += 1;
+    if (includePhotos) {
+      if (photoLayoutMode === "rombel-full") {
+        count += rombelFullPages.length;
+      } else if (photoLayoutMode === "rombel-compact") {
+        count += rombelCompactPairs.length;
+      } else {
+        count += photoChunksFlat.length;
       }
     }
+
+    if (hasVideoPage) count += 1;
+
+    // Lembar Pengesahan:
+    // Jika laporan hanya 1 halaman dan rombel <= 8, TTD dicantumkan di halaman 1.
+    // Jika banyak halaman (ada foto / video / lanjutan rombel), buat lembar pengesahan tersendiri yang berwibawa di akhir dokumen.
+    const isSinglePage =
+      count === 1 &&
+      !hasOverflowTable &&
+      (!includePhotos || rombelsWithPhotos.length === 0) &&
+      !hasVideoPage;
+
+    if (!isSinglePage && includeSignatures) {
+      count += 1;
+    }
+
     return count;
-  }, [hasOverflowTable, photoChunks, hasVideoPage, includeSignatures]);
+  }, [
+    hasOverflowTable,
+    includePhotos,
+    photoLayoutMode,
+    rombelFullPages.length,
+    rombelCompactPairs.length,
+    photoChunksFlat.length,
+    rombelsWithPhotos.length,
+    hasVideoPage,
+    includeSignatures,
+  ]);
 
   // Direct PDF Download Handler
   const handleDirectDownloadPdf = async () => {
@@ -240,16 +485,17 @@ export function ReportGenerator({
         return;
       }
 
-      // Tunggu hingga semua gambar di halaman terdecode sempurna
+      // Tunggu hingga semua gambar di halaman terdecode sempurna dengan toleransi timeout
       const images = Array.from(
         document.querySelectorAll<HTMLImageElement>(".f4-landscape-page img")
       );
       await Promise.all(
         images.map((img) => {
-          if (img.complete) return Promise.resolve();
+          if (img.complete && img.naturalWidth > 0) return Promise.resolve();
           return new Promise((resolve) => {
             img.onload = resolve;
             img.onerror = resolve;
+            setTimeout(resolve, 4000);
           });
         })
       );
@@ -320,18 +566,27 @@ export function ReportGenerator({
           progressPercent: 98,
         });
 
-        const safeCategory = (reportData.category?.name || "Laporan")
-          .replace(/[^a-zA-Z0-9_-]/g, "_");
+        const safeCategory = (reportData.category?.name || "Laporan").replace(
+          /[^a-zA-Z0-9_-]/g,
+          "_"
+        );
+        const safeKelas =
+          selectedKelas !== "all"
+            ? selectedKelas.replace(/[^a-zA-Z0-9_-]/g, "_")
+            : "Semua_Rombel";
         const safeDate = reportData.rawDate || selectedDate;
-        const filename = `Laporan_SIMATA_${safeCategory}_${safeDate}_F4_Landscape.pdf`;
+        const filename = `Laporan_SIMATA_${safeCategory}_${safeKelas}_${safeDate}_F4_Landscape.pdf`;
 
         pdf.save(filename);
 
         closeSwal();
         setIsExportingPdf(false);
-        toast.success("Berkas PDF F4 Landscape berhasil diunduh langsung!");
+        toast.success(
+          selectedKelas !== "all"
+            ? `Berkas PDF Laporan ${selectedKelas} berhasil diunduh!`
+            : "Berkas PDF Rekapitulasi Rombel berhasil diunduh!"
+        );
       } finally {
-        // Kembalikan skala zoom tampilan layar
         if (zoomContainer && savedTransform !== undefined) {
           zoomContainer.style.transform = savedTransform;
         }
@@ -361,13 +616,13 @@ export function ReportGenerator({
 
   // Kop Surat Resmi Kedinasan MI Bustanul Huda Dawuhan
   const renderOfficialKop = () => (
-    <div className="border-b-4 border-double border-black pb-2.5 mb-3">
+    <div className="border-b-4 border-double border-black pb-2 mb-2.5">
       <div className="flex items-center justify-between">
         {/* Logo Kemenag / Madrasah di sisi kiri kop */}
-        <div className="w-24 flex items-center justify-center">
-          <div className="h-16 w-16 rounded-full border-2 border-emerald-800 flex flex-col items-center justify-center p-1 bg-emerald-50 text-center">
-            <School className="h-7 w-7 text-emerald-800" />
-            <span className="text-[7.5px] font-black uppercase tracking-tighter text-emerald-950 mt-0.5">
+        <div className="w-20 flex items-center justify-center">
+          <div className="h-14 w-14 rounded-full border-2 border-emerald-800 flex flex-col items-center justify-center p-1 bg-emerald-50 text-center">
+            <School className="h-6 w-6 text-emerald-800" />
+            <span className="text-[7px] font-black uppercase tracking-tighter text-emerald-950 mt-0.5">
               MI BH DAWUHAN
             </span>
           </div>
@@ -375,28 +630,28 @@ export function ReportGenerator({
 
         {/* Teks Identitas Resmi Madrasah */}
         <div className="flex-1 px-4 text-center">
-          <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-800 m-0 leading-tight">
+          <h3 className="text-[10.5px] font-bold uppercase tracking-widest text-slate-800 m-0 leading-tight">
             Kementerian Agama Republik Indonesia
           </h3>
-          <h2 className="text-[12.5px] font-black uppercase tracking-wider text-slate-900 m-0 leading-tight mt-0.5">
+          <h2 className="text-[12px] font-black uppercase tracking-wider text-slate-900 m-0 leading-tight mt-0.5">
             Kantor Kementerian Agama Kabupaten Banyumas
           </h2>
-          <h1 className="text-[17px] font-black uppercase tracking-wide text-black m-0 leading-tight mt-1 font-serif">
+          <h1 className="text-[16px] font-black uppercase tracking-wide text-black m-0 leading-tight mt-0.5 font-serif">
             MADRASAH IBTIDAIYAH BUSTANUL HUDA DAWUHAN
           </h1>
-          <p className="text-[10px] text-slate-700 m-0 mt-0.5 leading-snug">
+          <p className="text-[9.5px] text-slate-700 m-0 mt-0.5 leading-snug">
             NSM: 111233020084 • NPSN: 60710777 • Terakreditasi "A" (Unggul)
           </p>
-          <p className="text-[9.5px] text-slate-600 m-0 leading-tight">
+          <p className="text-[9px] text-slate-600 m-0 leading-tight">
             Alamat: Dawuhan, Kec. Banyumas, Kab. Banyumas - Jawa Tengah 53192 • SIMATA Digital System
           </p>
         </div>
 
         {/* Logo SIMATA di sisi kanan */}
-        <div className="w-24 flex items-center justify-center">
-          <div className="h-16 w-16 rounded-2xl border-2 border-slate-400 flex flex-col items-center justify-center p-1 bg-slate-50 text-center">
-            <Sparkles className="h-7 w-7 text-emerald-700" />
-            <span className="text-[8.5px] font-black text-slate-800 uppercase tracking-tight mt-0.5">
+        <div className="w-20 flex items-center justify-center">
+          <div className="h-14 w-14 rounded-2xl border-2 border-slate-400 flex flex-col items-center justify-center p-1 bg-slate-50 text-center">
+            <Sparkles className="h-6 w-6 text-emerald-700" />
+            <span className="text-[8px] font-black text-slate-800 uppercase tracking-tight mt-0.5">
               SIMATA
             </span>
           </div>
@@ -407,11 +662,14 @@ export function ReportGenerator({
 
   // Running Header Kecil untuk Halaman 2 dan seterusnya
   const renderRunningHeader = (pageTitle: string) => (
-    <div className="border-b border-slate-300 pb-1 mb-2.5 flex items-center justify-between text-[9px] text-slate-600 font-serif">
+    <div className="border-b border-slate-300 pb-1 mb-2 flex items-center justify-between text-[9px] text-slate-600 font-serif">
       <div className="flex items-center gap-1.5 truncate">
         <strong className="text-black uppercase font-bold">MI BUSTANUL HUDA DAWUHAN</strong>
         <span>•</span>
-        <span className="truncate">Laporan: {currentCategoryName}</span>
+        <span className="truncate">
+          Laporan: {currentCategoryName}
+          {selectedKelas !== "all" ? ` • ${selectedKelas}` : ""}
+        </span>
       </div>
       <div className="flex items-center gap-1.5 shrink-0 text-right">
         <span className="font-semibold text-emerald-800">{pageTitle}</span>
@@ -422,55 +680,159 @@ export function ReportGenerator({
   );
 
   // Lembar Pengesahan Tanda Tangan
-  const renderSignatures = () => (
-    <div className="mt-4 pt-2 text-xs font-serif avoid-break">
-      <div className="flex justify-between items-start px-8">
-        <div className="w-72 text-center">
-          <p className="m-0 leading-tight">Mengetahui,</p>
-          <p className="font-bold m-0 leading-tight">Kepala Madrasah</p>
-          <div className="h-16 flex items-end justify-center">
-            {/* Ruang TTD & Stempel */}
-          </div>
-          <p className="font-bold underline uppercase m-0 leading-tight text-[11.5px]">
-            {headmasterName}
-          </p>
-          <p className="text-[10px] font-mono m-0 mt-0.5 text-slate-700">
-            NIP. {headmasterNip}
-          </p>
-        </div>
+  const renderSignatures = () => {
+    const isPerClass = selectedKelas !== "all";
+    const rightTitle = isPerClass
+      ? `Wali Kelas ${selectedKelas}`
+      : "Koordinator Program SIMATA";
+    const rightName = isPerClass
+      ? waliKelasName || selectedClassInfo?.submitterName || "Wali Kelas"
+      : coordinatorName;
+    const rightNip = isPerClass
+      ? waliKelasNip && waliKelasNip !== "-"
+        ? `NIP. ${waliKelasNip}`
+        : "NIP. -"
+      : `NIP. ${coordinatorNip}`;
 
-        <div className="w-72 text-center">
-          <p className="m-0 leading-tight">
-            Banyumas, {reportData?.dateFormatted || "19 Oktober 2026"}
-          </p>
-          <p className="font-bold m-0 leading-tight">
-            Koordinator Program SIMATA
-          </p>
-          <div className="h-16 flex items-end justify-center">
-            {/* Ruang TTD */}
+    return (
+      <div className="mt-4 pt-2 text-xs font-serif avoid-break">
+        <div className="flex justify-between items-start px-8">
+          <div className="w-72 text-center">
+            <p className="m-0 leading-tight">Mengetahui,</p>
+            <p className="font-bold m-0 leading-tight">Kepala Madrasah</p>
+            <div className="h-14 flex items-end justify-center">
+              {/* Ruang TTD & Stempel */}
+            </div>
+            <p className="font-bold underline uppercase m-0 leading-tight text-[11.5px]">
+              {headmasterName}
+            </p>
+            <p className="text-[10px] font-mono m-0 mt-0.5 text-slate-700">
+              NIP. {headmasterNip}
+            </p>
           </div>
-          <p className="font-bold underline uppercase m-0 leading-tight text-[11.5px]">
-            {coordinatorName}
-          </p>
-          <p className="text-[10px] font-mono m-0 mt-0.5 text-slate-700">
-            NIP. {coordinatorNip}
-          </p>
+
+          <div className="w-72 text-center">
+            <p className="m-0 leading-tight">
+              Banyumas, {reportData?.dateFormatted || "19 Oktober 2026"}
+            </p>
+            <p className="font-bold m-0 leading-tight">{rightTitle}</p>
+            <div className="h-14 flex items-end justify-center">
+              {/* Ruang TTD */}
+            </div>
+            <p className="font-bold underline uppercase m-0 leading-tight text-[11.5px]">
+              {rightName}
+            </p>
+            <p className="text-[10px] font-mono m-0 mt-0.5 text-slate-700">
+              {rightNip}
+            </p>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // Running Footer di Setiap Halaman
   const renderRunningFooter = (pageNum: number, total: number) => (
-    <div className="border-t border-slate-300 pt-1.5 mt-auto text-[8.5px] text-slate-500 flex justify-between items-center font-serif">
+    <div className="border-t border-slate-300 pt-1 mt-auto text-[8.5px] text-slate-500 flex justify-between items-center font-serif">
       <span>
-        SIMATA MI Bustanul Huda Dawuhan • Rekapitulasi Dokumen Resmi Pembiasaan Siswa
+        SIMATA MI Bustanul Huda Dawuhan •{" "}
+        {selectedKelas !== "all"
+          ? `Dokumen Laporan ${selectedKelas}`
+          : "Rekapitulasi Dokumen Resmi"}{" "}
+        Pembiasaan Siswa
       </span>
       <span className="font-bold text-slate-700">
         Kertas F4 Landscape (330 × 215 mm) • Halaman {pageNum} dari {total}
       </span>
     </div>
   );
+
+  // Helper render foto tunggal
+  const renderPhotoCard = ({
+    item,
+    photoIdx,
+    cardHeight,
+    imageHeight,
+    showSubInfo = false,
+  }: {
+    item: FlattenedMediaItem;
+    photoIdx: number;
+    cardHeight: string;
+    imageHeight: string;
+    showSubInfo?: boolean;
+  }) => {
+    const { sub, file } = item;
+    const imageProxySrc = `/api/proxy-image?fileId=${encodeURIComponent(
+      file.driveFileId || ""
+    )}&url=${encodeURIComponent(file.driveThumbnailUrl || "")}`;
+
+    return (
+      <div
+        key={file.id}
+        className="border border-slate-300 rounded-lg p-1.5 bg-white shadow-none overflow-hidden flex flex-col justify-between group transition-shadow hover:shadow-sm"
+        style={{
+          height: cardHeight,
+          boxSizing: "border-box",
+        }}
+      >
+        {/* Gambar Foto */}
+        <div
+          className="w-full bg-slate-100 rounded border border-slate-200 overflow-hidden relative flex items-center justify-center shrink-0 cursor-pointer"
+          style={{
+            height: imageHeight,
+            minHeight: imageHeight,
+            maxHeight: imageHeight,
+          }}
+          onClick={() =>
+            setModalImage({
+              src: imageProxySrc,
+              title: file.fileName,
+              rombel: `${sub.kelas} (${sub.madrasah})`,
+              notes: sub.notes,
+            })
+          }
+          title="Klik untuk memperbesar pratinjau di layar"
+        >
+          <img
+            src={imageProxySrc}
+            alt={file.fileName}
+            className="h-full w-full object-cover object-center"
+            crossOrigin="anonymous"
+            loading="eager"
+          />
+
+          {/* Badge Nomor Foto */}
+          <div className="absolute top-1 left-1 bg-black/75 backdrop-blur-sm text-white px-1.5 py-0.5 rounded text-[8px] font-bold font-sans tracking-wide shadow-sm flex items-center gap-1">
+            <ImageIcon className="h-2.5 w-2.5" />
+            <span>Foto #{photoIdx + 1}</span>
+          </div>
+
+          {/* Waktu Kirim Mengambang */}
+          <div className="absolute top-1 right-1 bg-white/90 backdrop-blur-sm text-slate-800 px-1 py-0.5 rounded text-[7.5px] font-mono font-bold shadow-sm">
+            {sub.timeFormatted}
+          </div>
+        </div>
+
+        {/* Informasi Keterangan di Bawah Foto */}
+        <div className="w-full flex items-center justify-between text-[8px] text-slate-600 font-sans pt-1 px-0.5 shrink-0 truncate">
+          <div className="truncate flex items-center gap-1">
+            {showSubInfo ? (
+              <span className="font-bold text-black truncate">
+                {sub.kelas} • {sub.submitterName}
+              </span>
+            ) : (
+              <span className="truncate text-slate-700">
+                Wali Kelas: <strong className="text-black font-semibold">{sub.submitterName}</strong>
+              </span>
+            )}
+          </div>
+          <span className="text-[7.5px] font-mono text-slate-400 shrink-0 ml-1">
+            {file.fileSize ? formatBytes(file.fileSize) : "Tersimpan"}
+          </span>
+        </div>
+      </div>
+    );
+  };
 
   let pageCounter = 1;
 
@@ -514,7 +876,7 @@ export function ReportGenerator({
             height: 215mm !important;
             min-height: 215mm !important;
             max-height: 215mm !important;
-            padding: 10mm 15mm !important;
+            padding: 8mm 12mm !important;
             box-sizing: border-box !important;
             box-shadow: none !important;
             border: none !important;
@@ -568,7 +930,7 @@ export function ReportGenerator({
                   </Badge>
                 </CardTitle>
                 <CardDescription className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Format resmi kertas F4 mendatar (Landscape) dengan unduh berkas PDF langsung tanpa jendela dialog print browser.
+                  Susun dokumentasi foto kegiatan secara rapi per kelas/rombel, lengkap dengan catatan refleksi wali kelas dan unduhan PDF langsung.
                 </CardDescription>
               </div>
             </div>
@@ -612,74 +974,294 @@ export function ReportGenerator({
         </CardHeader>
 
         <CardContent className="p-5 sm:p-6 space-y-5">
-          {/* Form Filter Utama */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* 1. Pilih Kategori */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                Kategori Kegiatan
-              </Label>
-              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                <SelectTrigger className="rounded-xl text-xs bg-slate-50 dark:bg-slate-800/60 font-bold">
-                  <SelectValue placeholder="Pilih Kategori" />
-                </SelectTrigger>
-                <SelectContent>
-                  {initialCategories.map((c) => (
-                    <SelectItem key={c.id} value={c.id} className="text-xs font-semibold">
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Baris Pemilihan Mode Periode & Banner Laporan Per Kelas */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Periode Laporan:
+                </span>
+                <div className="inline-flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setDateMode("single")}
+                    className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                      dateMode === "single"
+                        ? "bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-400 shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                    }`}
+                  >
+                    Harian (1 Tanggal)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDateMode("range")}
+                    className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                      dateMode === "range"
+                        ? "bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-400 shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                    }`}
+                  >
+                    Rentang Periode (Banyak Hari)
+                  </button>
+                </div>
+              </div>
+
+              {selectedKelas !== "all" && (
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-emerald-100 text-emerald-950 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 text-xs py-1 px-3 font-bold gap-1.5">
+                    <Sparkles className="h-3 w-3 text-emerald-600" />
+                    <span>Laporan Khusus: <strong>{selectedKelas}</strong></span>
+                  </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedKelas("all")}
+                    className="h-7 text-xs border-slate-300 dark:border-slate-700 text-slate-700 hover:text-slate-900 rounded-lg cursor-pointer"
+                  >
+                    ✕ Tampilkan Semua Rombel
+                  </Button>
+                </div>
+              )}
             </div>
 
-            {/* 2. Pilih Tanggal Kegiatan */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                Tanggal Kegiatan
-              </Label>
-              <div className="relative">
-                <Input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="rounded-xl text-xs bg-slate-50 dark:bg-slate-800/60 font-bold pl-9"
-                />
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-600 pointer-events-none" />
+            {/* Grid Form Filter Utama */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* 1. Pilih Kategori */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Kategori Kegiatan
+                </Label>
+                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                  <SelectTrigger className="rounded-xl text-xs bg-slate-50 dark:bg-slate-800/60 font-bold">
+                    <SelectValue placeholder="Pilih Kategori" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {initialCategories.map((c) => (
+                      <SelectItem key={c.id} value={c.id} className="text-xs font-semibold">
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 2. Pilih Tanggal (Harian atau Rentang Periode) */}
+              {dateMode === "single" ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Tanggal Kegiatan
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                      className="rounded-xl text-xs bg-slate-50 dark:bg-slate-800/60 font-bold pl-9"
+                    />
+                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-600 pointer-events-none" />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Rentang Tanggal Kegiatan
+                  </Label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <Input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="rounded-xl text-xs bg-slate-50 dark:bg-slate-800/60 font-bold px-2"
+                      title="Dari Tanggal"
+                    />
+                    <Input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="rounded-xl text-xs bg-slate-50 dark:bg-slate-800/60 font-bold px-2"
+                      title="Sampai Tanggal"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 3. Filter Satuan Madrasah */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Satuan Madrasah
+                </Label>
+                <Select value={selectedMadrasah} onValueChange={setSelectedMadrasah}>
+                  <SelectTrigger className="rounded-xl text-xs bg-slate-50 dark:bg-slate-800/60 font-bold">
+                    <SelectValue placeholder="Semua Madrasah" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs font-semibold">
+                      Semua Madrasah (MI 01 & MI 02)
+                    </SelectItem>
+                    {initialMadrasahs.map((m) => (
+                      <SelectItem key={m.id} value={m.name} className="text-xs font-semibold">
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 4. Filter Rombel / Kelas Khusus */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Filter Rombel / Kelas
+                </Label>
+                <Select value={selectedKelas} onValueChange={setSelectedKelas}>
+                  <SelectTrigger className="rounded-xl text-xs bg-slate-50 dark:bg-slate-800/60 font-bold">
+                    <SelectValue placeholder="Semua Rombel" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs font-semibold">
+                      Semua Rombel ({rombelGroups.length} Rombel)
+                    </SelectItem>
+                    {availableClasses.map((cls) => {
+                      const count = submissionCountByClass[cls] || 0;
+                      return (
+                        <SelectItem key={cls} value={cls} className="text-xs font-semibold">
+                          {cls} {count > 0 ? `(${count} terdata)` : "(0)"}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
-            {/* 3. Filter Madrasah */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                Satuan Pendidikan (Madrasah)
-              </Label>
-              <Select value={selectedMadrasah} onValueChange={setSelectedMadrasah}>
-                <SelectTrigger className="rounded-xl text-xs bg-slate-50 dark:bg-slate-800/60 font-bold">
-                  <SelectValue placeholder="Semua Madrasah" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all" className="text-xs font-semibold">
-                    Semua Madrasah (MI 01 & MI 02 Dawuhan)
-                  </SelectItem>
-                  {initialMadrasahs.map((m) => (
-                    <SelectItem key={m.id} value={m.name} className="text-xs font-semibold">
-                      {m.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Bilah Navigasi Cepat Kelas (Pills / Quick Buttons) */}
+            <div className="pt-1.5 border-t border-slate-200/80 dark:border-slate-800">
+              <div className="flex items-center justify-between pb-1.5">
+                <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Layers className="h-3.5 w-3.5 text-emerald-600" />
+                  <span>Navigasi Cepat Laporan Per Kelas:</span>
+                </span>
+                <span className="text-[10px] text-slate-500">
+                  Pilih rombel untuk menyusun laporan kelas & unduh PDF khusus rombel tersebut
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                <button
+                  type="button"
+                  onClick={() => setSelectedKelas("all")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                    selectedKelas === "all"
+                      ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/25 ring-2 ring-emerald-600/30"
+                      : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
+                  }`}
+                >
+                  <Sparkles className="h-3 w-3" />
+                  <span>Semua Rombel</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                      selectedKelas === "all"
+                        ? "bg-emerald-800 text-white"
+                        : "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
+                    }`}
+                  >
+                    {rombelGroups.length}
+                  </span>
+                </button>
+
+                {availableClasses.map((cls) => {
+                  const isSelected = selectedKelas.toLowerCase() === cls.toLowerCase();
+                  const count = submissionCountByClass[cls] || 0;
+
+                  return (
+                    <button
+                      key={cls}
+                      type="button"
+                      onClick={() => setSelectedKelas(cls)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                        isSelected
+                          ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/25 ring-2 ring-emerald-600/30"
+                          : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
+                      }`}
+                    >
+                      <span>{cls}</span>
+                      <span
+                        className={`text-[9.5px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                          isSelected
+                            ? "bg-emerald-800 text-white"
+                            : count > 0
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                            : "bg-slate-200 dark:bg-slate-700 text-slate-500"
+                        }`}
+                      >
+                        {count > 0 ? `✓ ${count}` : "0"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          {/* Opsi Tata Letak & Data Cetak */}
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 space-y-3">
-            <div className="flex items-center gap-2 text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-              <SlidersHorizontal className="h-3.5 w-3.5 text-emerald-600" />
-              <span>Opsi Kustomisasi Laporan F4 Landscape</span>
+          {/* Opsi Format Tampilan Foto Per Rombel */}
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                <SlidersHorizontal className="h-4 w-4 text-emerald-600" />
+                <span>Format Pengelompokan Foto Kegiatan</span>
+              </div>
+
+              {/* Mode Foto Selector Buttons */}
+              <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setPhotoLayoutMode("rombel-full")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    photoLayoutMode === "rombel-full"
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                  }`}
+                  title="Format Eksklusif: Setiap rombel ditampilkan dalam 1 halaman F4 penuh dengan foto besar & catatan kegiatan"
+                >
+                  <Layers className="h-3.5 w-3.5" />
+                  <span>Per Rombel (1 Rombel / Hal)</span>
+                  <span className="text-[9px] bg-emerald-800/50 text-white px-1.5 py-0.2 rounded font-mono">
+                    Rekomendasi
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPhotoLayoutMode("rombel-compact")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    photoLayoutMode === "rombel-compact"
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                  }`}
+                  title="Format Kompak: 2 rombel per halaman untuk menghemat kertas cetak"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                  <span>Per Rombel Kompak (2 Rombel / Hal)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPhotoLayoutMode("grid-flat")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    photoLayoutMode === "grid-flat"
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                  }`}
+                  title="Format Grid Campuran: 6 foto per halaman tanpa pemisahan blok kelas"
+                >
+                  <Grid className="h-3.5 w-3.5" />
+                  <span>Grid Campuran (6 Foto)</span>
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+            {/* Checkbox Kelengkapan Dokumen */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs pt-1 border-t border-slate-200/60 dark:border-slate-800">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -754,19 +1336,41 @@ export function ReportGenerator({
 
                 <div className="space-y-1">
                   <Label className="text-[11px] font-semibold text-muted-foreground">
-                    Nama & NIP Koordinator Program:
+                    {selectedKelas !== "all"
+                      ? `Nama & NIP Wali Kelas (${selectedKelas}):`
+                      : "Nama & NIP Koordinator Program:"}
                   </Label>
                   <div className="grid grid-cols-2 gap-2">
                     <Input
-                      value={coordinatorName}
-                      onChange={(e) => setCoordinatorName(e.target.value)}
-                      placeholder="Nama Koordinator Program"
-                      className="h-8 text-xs rounded-lg"
+                      value={
+                        selectedKelas !== "all"
+                          ? waliKelasName || selectedClassInfo?.submitterName || ""
+                          : coordinatorName
+                      }
+                      onChange={(e) =>
+                        selectedKelas !== "all"
+                          ? setWaliKelasName(e.target.value)
+                          : setCoordinatorName(e.target.value)
+                      }
+                      placeholder={
+                        selectedKelas !== "all"
+                          ? "Nama Wali Kelas"
+                          : "Nama Koordinator Program"
+                      }
+                      className="h-8 text-xs rounded-lg font-semibold"
                     />
                     <Input
-                      value={coordinatorNip}
-                      onChange={(e) => setCoordinatorNip(e.target.value)}
-                      placeholder="NIP Koordinator"
+                      value={
+                        selectedKelas !== "all"
+                          ? waliKelasNip
+                          : coordinatorNip
+                      }
+                      onChange={(e) =>
+                        selectedKelas !== "all"
+                          ? setWaliKelasNip(e.target.value)
+                          : setCoordinatorNip(e.target.value)
+                      }
+                      placeholder="NIP"
                       className="h-8 text-xs rounded-lg font-mono"
                     />
                   </div>
@@ -780,33 +1384,43 @@ export function ReportGenerator({
             <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
               <Info className="h-4 w-4 text-emerald-600 shrink-0" />
               <span>
-                Format Standar Dokumen: <strong>Kertas F4 / Folio Mendatar (330 × 215 mm)</strong>. Total <strong>{totalPages} Halaman</strong> tersusun rapi.
+                Format Standar Dokumen: <strong>Kertas F4 / Folio Mendatar (330 × 215 mm)</strong>. Total{" "}
+                <strong>{totalPages} Halaman</strong> tersusun rapi per rombel.
               </span>
             </div>
 
-            {/* Zoom Selector untuk kemudahan membaca di layar laptop/tablet */}
+            {/* Zoom Selector untuk kemudahan membaca di layar */}
             <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300">
               <span className="text-[11px] px-2 text-muted-foreground">Skala Tampilan:</span>
               <button
+                type="button"
                 onClick={() => setPreviewZoom(70)}
-                className={`px-2.5 py-1 rounded-lg transition-all ${
-                  previewZoom === 70 ? "bg-white dark:bg-slate-700 text-emerald-600 shadow-sm" : ""
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  previewZoom === 70
+                    ? "bg-white dark:bg-slate-700 text-emerald-600 shadow-sm"
+                    : ""
                 }`}
               >
                 70%
               </button>
               <button
+                type="button"
                 onClick={() => setPreviewZoom(85)}
-                className={`px-2.5 py-1 rounded-lg transition-all ${
-                  previewZoom === 85 ? "bg-white dark:bg-slate-700 text-emerald-600 shadow-sm" : ""
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  previewZoom === 85
+                    ? "bg-white dark:bg-slate-700 text-emerald-600 shadow-sm"
+                    : ""
                 }`}
               >
                 85%
               </button>
               <button
+                type="button"
                 onClick={() => setPreviewZoom(100)}
-                className={`px-2.5 py-1 rounded-lg transition-all ${
-                  previewZoom === 100 ? "bg-white dark:bg-slate-700 text-emerald-600 shadow-sm" : ""
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  previewZoom === 100
+                    ? "bg-white dark:bg-slate-700 text-emerald-600 shadow-sm"
+                    : ""
                 }`}
               >
                 100% (Asli)
@@ -836,7 +1450,7 @@ export function ReportGenerator({
             style={{
               width: "330mm",
               height: "215mm",
-              padding: "10mm 15mm",
+              padding: "8mm 12mm",
               boxSizing: "border-box",
               backgroundColor: "#ffffff",
               color: "#000000",
@@ -848,75 +1462,170 @@ export function ReportGenerator({
               {renderOfficialKop()}
 
               {/* Judul Dokumen Laporan */}
-              <div className="text-center my-2 space-y-0.5">
-                <h2 className="text-[13px] font-black uppercase tracking-wider underline underline-offset-4 decoration-2">
-                  LAPORAN REKAPITULASI DOKUMENTASI KEGIATAN PEMBIASAAN SISWA
+              <div className="text-center my-1.5 space-y-0.5">
+                <h2 className="text-[12.5px] font-black uppercase tracking-wider underline underline-offset-4 decoration-2">
+                  {selectedKelas !== "all"
+                    ? "LAPORAN DOKUMENTASI KEGIATAN PEMBIASAAN SISWA"
+                    : "LAPORAN REKAPITULASI DOKUMENTASI KEGIATAN PEMBIASAAN SISWA"}
                 </h2>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-800">
+                <p className="text-[10.5px] font-bold uppercase tracking-wider text-slate-800">
                   PROGRAM: {currentCategoryName}
+                  {selectedKelas !== "all" && (
+                    <span className="text-emerald-900 font-black ml-1.5">
+                      • ROMBEL: {selectedKelas.toUpperCase()}
+                    </span>
+                  )}
                 </p>
-                <div className="flex items-center justify-center gap-3 text-[10.5px] text-slate-700 font-semibold pt-0.5">
-                  <span>Hari / Tanggal: <strong>{reportData?.dateFormatted || "Hari Ini"}</strong></span>
+                <div className="flex items-center justify-center gap-3 text-[10px] text-slate-700 font-semibold pt-0.5">
+                  <span>
+                    Hari / Tanggal: <strong>{reportData?.dateFormatted || "Hari Ini"}</strong>
+                  </span>
                   <span>•</span>
                   <span>
                     Satuan Pendidikan:{" "}
                     <strong>
-                      {selectedMadrasah === "all"
-                        ? "MI Bustanul Huda 01 & 02 Dawuhan"
-                        : selectedMadrasah}
+                      {selectedClassInfo?.madrasah ||
+                        (selectedMadrasah === "all"
+                          ? "MI Bustanul Huda 01 & 02 Dawuhan"
+                          : selectedMadrasah)}
                     </strong>
                   </span>
+                  {selectedKelas !== "all" && selectedClassInfo?.submitterName && (
+                    <>
+                      <span>•</span>
+                      <span>
+                        Wali Kelas:{" "}
+                        <strong className="text-emerald-950 font-bold">
+                          {selectedClassInfo.submitterName}
+                        </strong>
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
 
               {/* Ringkasan Statistik Cepat */}
-              <div className="my-2 p-2 rounded-lg border border-slate-300 bg-slate-50/80 text-[10.5px] flex items-center justify-around text-center">
-                <div>
-                  <span className="text-[9px] text-slate-500 uppercase font-bold block">
-                    Total Rombel Mengisi
-                  </span>
-                  <strong className="text-xs font-black text-black">
-                    {reportData?.totalSubmissions || 0} Rombel
-                  </strong>
+              {selectedKelas !== "all" ? (
+                /* Ringkasan Khusus Rombel / Kelas Terpilih */
+                <div className="my-1.5 p-2 rounded-lg border-2 border-emerald-800/30 bg-emerald-50/50 text-[10px] flex items-center justify-around text-center">
+                  <div>
+                    <span className="text-[8px] text-slate-500 uppercase font-bold block">
+                      Rombel / Kelas
+                    </span>
+                    <strong className="text-xs font-black text-emerald-950 uppercase">
+                      {selectedKelas}
+                    </strong>
+                  </div>
+                  <div className="border-r border-emerald-300 h-5"></div>
+                  <div>
+                    <span className="text-[8px] text-slate-500 uppercase font-bold block">
+                      Wali Kelas
+                    </span>
+                    <strong className="text-xs font-black text-black">
+                      {selectedClassInfo?.submitterName || "Belum Mengisi"}
+                    </strong>
+                  </div>
+                  <div className="border-r border-emerald-300 h-5"></div>
+                  <div>
+                    <span className="text-[8px] text-slate-500 uppercase font-bold block">
+                      Jumlah Siswa Hadir
+                    </span>
+                    <strong className="text-xs font-black text-slate-900">
+                      {selectedClassInfo?.studentCount
+                        ? `${selectedClassInfo.studentCount} Siswa`
+                        : "-"}
+                    </strong>
+                  </div>
+                  <div className="border-r border-emerald-300 h-5"></div>
+                  <div>
+                    <span className="text-[8px] text-slate-500 uppercase font-bold block">
+                      Dokumentasi Terlampir
+                    </span>
+                    <strong className="text-xs font-black text-emerald-800">
+                      {flatPhotos.length} Foto • {flatVideos.length} Video
+                    </strong>
+                  </div>
                 </div>
-                <div className="border-r border-slate-300 h-6"></div>
-                <div>
-                  <span className="text-[9px] text-slate-500 uppercase font-bold block">
-                    Total Berkas Dokumentasi
-                  </span>
-                  <strong className="text-xs font-black text-emerald-800">
-                    {reportData?.totalFiles || 0} File Terarsip ({photoItems.length} Foto, {videoItems.length} Video)
-                  </strong>
+              ) : (
+                /* Ringkasan Semua Rombel Gabungan */
+                <div className="my-1.5 p-1.5 rounded-lg border border-slate-300 bg-slate-50/80 text-[10px] flex items-center justify-around text-center">
+                  <div>
+                    <span className="text-[8.5px] text-slate-500 uppercase font-bold block">
+                      Total Rombel
+                    </span>
+                    <strong className="text-xs font-black text-black">
+                      {submissionsList.length} Rombel Terdata
+                    </strong>
+                  </div>
+                  <div className="border-r border-slate-300 h-5"></div>
+                  <div>
+                    <span className="text-[8.5px] text-slate-500 uppercase font-bold block">
+                      Dokumentasi Foto & Video
+                    </span>
+                    <strong className="text-xs font-black text-emerald-800">
+                      {flatPhotos.length} Foto • {flatVideos.length} Video Terarsip
+                    </strong>
+                  </div>
+                  <div className="border-r border-slate-300 h-5"></div>
+                  <div>
+                    <span className="text-[8.5px] text-slate-500 uppercase font-bold block">
+                      Penyimpanan & Keamanan
+                    </span>
+                    <strong className="text-xs font-black text-teal-800">
+                      Google Drive Cloud Resmi Madrasah
+                    </strong>
+                  </div>
                 </div>
-                <div className="border-r border-slate-300 h-6"></div>
-                <div>
-                  <span className="text-[9px] text-slate-500 uppercase font-bold block">
-                    Status Penyimpanan
-                  </span>
-                  <strong className="text-xs font-black text-teal-800">
-                    Cloud Google Drive Resmi Madrasah
-                  </strong>
-                </div>
-              </div>
+              )}
 
-              {/* Bagian I: Tabel Rekapitulasi Rombel (Landscape Lebar 330mm) */}
-              <div className="mt-2">
-                <h4 className="text-[11px] font-black uppercase mb-1.5 tracking-wide text-slate-900">
-                  I. Rekapitulasi Kehadiran & Partisipasi Rombel
-                </h4>
+              {/* Catatan Refleksi Khusus Kelas Terpilih */}
+              {selectedKelas !== "all" && includeNotes && selectedClassInfo?.notes && (
+                <div className="my-1.5 p-2 rounded-lg border border-emerald-300 bg-emerald-50/60 text-[9.5px] text-slate-800 leading-snug font-serif">
+                  <div className="flex items-center gap-1.5 font-sans font-bold text-emerald-900 text-[10px] mb-0.5">
+                    <Quote className="h-3 w-3" />
+                    <span>Catatan Refleksi & Pembiasaan dari Wali Kelas:</span>
+                  </div>
+                  <p className="italic m-0 pl-4 border-l-2 border-emerald-700">
+                    "{selectedClassInfo.notes}"
+                  </p>
+                </div>
+              )}
+
+              {/* Bagian I: Tabel Rekapitulasi Rombel atau Detail Kelas */}
+              <div className="mt-1.5">
+                <div className="flex items-center justify-between mb-1">
+                  <h4 className="text-[10.5px] font-black uppercase tracking-wide text-slate-900 m-0">
+                    {selectedKelas !== "all"
+                      ? `I. Rincian Pelaksanaan Pembiasaan: ${selectedKelas}`
+                      : "I. Rekapitulasi Kehadiran & Partisipasi Rombel"}
+                  </h4>
+                  {selectedKelas !== "all" && (
+                    <span className="text-[9px] text-emerald-800 font-sans font-bold no-print">
+                      Mode Laporan Per Kelas
+                    </span>
+                  )}
+                </div>
 
                 {primaryTableRows.length > 0 ? (
                   <table className="print-table w-full border border-black text-left text-xs">
                     <thead>
-                      <tr className="bg-slate-100 border-b border-black text-black text-[10.5px]">
-                        <th className="p-1.5 border border-black text-center w-8">No</th>
-                        <th className="p-1.5 border border-black text-center w-24">Rombel / Kelas</th>
-                        <th className="p-1.5 border border-black w-44">Satuan Pendidikan</th>
-                        <th className="p-1.5 border border-black w-40">Nama Wali Kelas</th>
-                        <th className="p-1.5 border border-black text-center w-24">Waktu Kirim</th>
-                        <th className="p-1.5 border border-black text-center w-28">Berkas</th>
+                      <tr className="bg-slate-100 border-b border-black text-black text-[10px]">
+                        <th className="p-1 border border-black text-center w-8">No</th>
+                        <th className="p-1 border border-black text-center w-24">
+                          {selectedKelas !== "all" ? "Tanggal / Hari" : "Rombel / Kelas"}
+                        </th>
+                        <th className="p-1 border border-black w-44">Satuan Pendidikan</th>
+                        <th className="p-1 border border-black w-40">Nama Wali Kelas</th>
+                        <th className="p-1 border border-black text-center w-20">Siswa</th>
+                        <th className="p-1 border border-black text-center w-24">Waktu</th>
+                        <th className="p-1 border border-black text-center w-28">Dokumentasi</th>
                         {includeNotes && (
-                          <th className="p-1.5 border border-black">Catatan Refleksi / Pembiasaan</th>
+                          <th className="p-1 border border-black">Catatan Refleksi / Pembiasaan</th>
+                        )}
+                        {selectedKelas === "all" && (
+                          <th className="p-1 border border-black text-center w-20 no-print">
+                            Aksi
+                          </th>
                         )}
                       </tr>
                     </thead>
@@ -925,7 +1634,8 @@ export function ReportGenerator({
                         const pCount = item.files.filter(
                           (f) =>
                             f.fileType === "IMAGE" ||
-                            (!f.fileType?.includes("VIDEO") && !f.fileName.match(/\.(mp4|mov|avi|mkv|webm)$/i))
+                            (!f.fileType?.includes("VIDEO") &&
+                              !f.fileName.match(/\.(mp4|mov|avi|mkv|webm)$/i))
                         ).length;
 
                         const vCount = item.files.filter(
@@ -935,33 +1645,53 @@ export function ReportGenerator({
                         ).length;
 
                         return (
-                          <tr key={item.id} className="border-b border-black text-[10px]">
-                            <td className="p-1.5 border border-black text-center font-mono">{idx + 1}</td>
-                            <td className="p-1.5 border border-black text-center font-bold">
-                              {item.kelas}
+                          <tr key={item.id} className="border-b border-black text-[9.5px]">
+                            <td className="p-1 border border-black text-center font-mono">
+                              {idx + 1}
                             </td>
-                            <td className="p-1.5 border border-black">
+                            <td className="p-1 border border-black text-center font-bold">
+                              {selectedKelas !== "all" ? item.dateFormatted : item.kelas}
+                            </td>
+                            <td className="p-1 border border-black">
                               {item.madrasah.includes("01")
                                 ? "MI Bustanul Huda 01 Dawuhan"
                                 : "MI Bustanul Huda 02 Dawuhan"}
                             </td>
-                            <td className="p-1.5 border border-black font-semibold">
+                            <td className="p-1 border border-black font-semibold">
                               {item.submitterName}
                             </td>
-                            <td className="p-1.5 border border-black text-center font-mono">
+                            <td className="p-1 border border-black text-center font-mono">
+                              {item.studentCount ? `${item.studentCount}` : "-"}
+                            </td>
+                            <td className="p-1 border border-black text-center font-mono">
                               {item.timeFormatted}
                             </td>
-                            <td className="p-1.5 border border-black text-center font-bold">
+                            <td className="p-1 border border-black text-center font-bold">
                               {pCount > 0 && <span>{pCount} Foto</span>}
                               {pCount > 0 && vCount > 0 && <span className="text-slate-400"> • </span>}
                               {vCount > 0 && (
                                 <span className="text-blue-800 font-semibold">{vCount} Video</span>
                               )}
-                              {pCount === 0 && vCount === 0 && <span className="text-slate-400">-</span>}
+                              {pCount === 0 && vCount === 0 && (
+                                <span className="text-slate-400">-</span>
+                              )}
                             </td>
                             {includeNotes && (
-                              <td className="p-1.5 border border-black leading-snug">
+                              <td className="p-1 border border-black leading-snug">
                                 {item.notes || "-"}
+                              </td>
+                            )}
+                            {selectedKelas === "all" && (
+                              <td className="p-1 border border-black text-center no-print">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedKelas(item.kelas)}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-[8.5px] font-bold px-1.5 py-0.5 rounded cursor-pointer transition-all active:scale-95 inline-flex items-center gap-1 shadow-sm"
+                                  title={`Susun & unduh laporan khusus ${item.kelas}`}
+                                >
+                                  <FileCheck2 className="h-2.5 w-2.5" />
+                                  <span>Laporan</span>
+                                </button>
                               </td>
                             )}
                           </tr>
@@ -972,7 +1702,9 @@ export function ReportGenerator({
                 ) : (
                   <div className="p-6 text-center border border-dashed border-slate-300 rounded-xl">
                     <p className="text-xs text-slate-500 italic">
-                      Belum ada data pengisian kegiatan pada tanggal {reportData?.dateFormatted || selectedDate}.
+                      {selectedKelas !== "all"
+                        ? `Belum ada pengisian kegiatan untuk ${selectedKelas} pada ${reportData?.dateFormatted || selectedDate}.`
+                        : `Belum ada data pengisian kegiatan pada tanggal ${reportData?.dateFormatted || selectedDate}.`}
                     </p>
                   </div>
                 )}
@@ -995,7 +1727,7 @@ export function ReportGenerator({
               style={{
                 width: "330mm",
                 height: "215mm",
-                padding: "10mm 15mm",
+                padding: "8mm 12mm",
                 boxSizing: "border-box",
                 backgroundColor: "#ffffff",
                 color: "#000000",
@@ -1007,20 +1739,30 @@ export function ReportGenerator({
 
                 <div className="mt-2">
                   <h4 className="text-[11px] font-black uppercase mb-1.5 tracking-wide text-slate-900">
-                    I. Rekapitulasi Kehadiran & Partisipasi Rombel (Lanjutan)
+                    {selectedKelas !== "all"
+                      ? `I. Rincian Pelaksanaan Pembiasaan: ${selectedKelas} (Lanjutan)`
+                      : "I. Rekapitulasi Kehadiran & Partisipasi Rombel (Lanjutan)"}
                   </h4>
 
                   <table className="print-table w-full border border-black text-left text-xs">
                     <thead>
-                      <tr className="bg-slate-100 border-b border-black text-black text-[10.5px]">
-                        <th className="p-1.5 border border-black text-center w-8">No</th>
-                        <th className="p-1.5 border border-black text-center w-24">Rombel / Kelas</th>
-                        <th className="p-1.5 border border-black w-44">Satuan Pendidikan</th>
-                        <th className="p-1.5 border border-black w-40">Nama Wali Kelas</th>
-                        <th className="p-1.5 border border-black text-center w-24">Waktu Kirim</th>
-                        <th className="p-1.5 border border-black text-center w-28">Berkas</th>
+                      <tr className="bg-slate-100 border-b border-black text-black text-[10px]">
+                        <th className="p-1 border border-black text-center w-8">No</th>
+                        <th className="p-1 border border-black text-center w-24">
+                          {selectedKelas !== "all" ? "Tanggal / Hari" : "Rombel / Kelas"}
+                        </th>
+                        <th className="p-1 border border-black w-44">Satuan Pendidikan</th>
+                        <th className="p-1 border border-black w-40">Nama Wali Kelas</th>
+                        <th className="p-1 border border-black text-center w-20">Siswa</th>
+                        <th className="p-1 border border-black text-center w-24">Waktu</th>
+                        <th className="p-1 border border-black text-center w-28">Dokumentasi</th>
                         {includeNotes && (
-                          <th className="p-1.5 border border-black">Catatan Refleksi / Pembiasaan</th>
+                          <th className="p-1 border border-black">Catatan Refleksi / Pembiasaan</th>
+                        )}
+                        {selectedKelas === "all" && (
+                          <th className="p-1 border border-black text-center w-20 no-print">
+                            Aksi
+                          </th>
                         )}
                       </tr>
                     </thead>
@@ -1029,7 +1771,8 @@ export function ReportGenerator({
                         const pCount = item.files.filter(
                           (f) =>
                             f.fileType === "IMAGE" ||
-                            (!f.fileType?.includes("VIDEO") && !f.fileName.match(/\.(mp4|mov|avi|mkv|webm)$/i))
+                            (!f.fileType?.includes("VIDEO") &&
+                              !f.fileName.match(/\.(mp4|mov|avi|mkv|webm)$/i))
                         ).length;
 
                         const vCount = item.files.filter(
@@ -1039,35 +1782,53 @@ export function ReportGenerator({
                         ).length;
 
                         return (
-                          <tr key={item.id} className="border-b border-black text-[10px]">
-                            <td className="p-1.5 border border-black text-center font-mono">
+                          <tr key={item.id} className="border-b border-black text-[9.5px]">
+                            <td className="p-1 border border-black text-center font-mono">
                               {idx + 9}
                             </td>
-                            <td className="p-1.5 border border-black text-center font-bold">
-                              {item.kelas}
+                            <td className="p-1 border border-black text-center font-bold">
+                              {selectedKelas !== "all" ? item.dateFormatted : item.kelas}
                             </td>
-                            <td className="p-1.5 border border-black">
+                            <td className="p-1 border border-black">
                               {item.madrasah.includes("01")
                                 ? "MI Bustanul Huda 01 Dawuhan"
                                 : "MI Bustanul Huda 02 Dawuhan"}
                             </td>
-                            <td className="p-1.5 border border-black font-semibold">
+                            <td className="p-1 border border-black font-semibold">
                               {item.submitterName}
                             </td>
-                            <td className="p-1.5 border border-black text-center font-mono">
+                            <td className="p-1 border border-black text-center font-mono">
+                              {item.studentCount ? `${item.studentCount}` : "-"}
+                            </td>
+                            <td className="p-1 border border-black text-center font-mono">
                               {item.timeFormatted}
                             </td>
-                            <td className="p-1.5 border border-black text-center font-bold">
+                            <td className="p-1 border border-black text-center font-bold">
                               {pCount > 0 && <span>{pCount} Foto</span>}
                               {pCount > 0 && vCount > 0 && <span className="text-slate-400"> • </span>}
                               {vCount > 0 && (
                                 <span className="text-blue-800 font-semibold">{vCount} Video</span>
                               )}
-                              {pCount === 0 && vCount === 0 && <span className="text-slate-400">-</span>}
+                              {pCount === 0 && vCount === 0 && (
+                                <span className="text-slate-400">-</span>
+                              )}
                             </td>
                             {includeNotes && (
-                              <td className="p-1.5 border border-black leading-snug">
+                              <td className="p-1 border border-black leading-snug">
                                 {item.notes || "-"}
+                              </td>
+                            )}
+                            {selectedKelas === "all" && (
+                              <td className="p-1 border border-black text-center no-print">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedKelas(item.kelas)}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-[8.5px] font-bold px-1.5 py-0.5 rounded cursor-pointer transition-all active:scale-95 inline-flex items-center gap-1 shadow-sm"
+                                  title={`Susun & unduh laporan khusus ${item.kelas}`}
+                                >
+                                  <FileCheck2 className="h-2.5 w-2.5" />
+                                  <span>Laporan</span>
+                                </button>
                               </td>
                             )}
                           </tr>
@@ -1077,8 +1838,8 @@ export function ReportGenerator({
                   </table>
                 </div>
 
-                {/* Jika tidak ada lampiran foto & video, tempatkan TTD di halaman 1b */}
-                {photoChunks.length === 0 && !hasVideoPage && includeSignatures && renderSignatures()}
+                {/* TTD jika tidak ada lampiran foto & video */}
+                {rombelsWithPhotos.length === 0 && !hasVideoPage && includeSignatures && renderSignatures()}
               </div>
 
               {renderRunningFooter(pageCounter++, totalPages)}
@@ -1086,21 +1847,171 @@ export function ReportGenerator({
           )}
 
           {/* =====================================================================
-              HALAMAN LAMPIRAN FOTO: GRID 3 KOLOM x 2 BARIS (6 FOTO PER HALAMAN)
+              MODE 1: LAMPIRAN FOTO PER ROMBEL (1 ROMBEL PER HALAMAN F4)
               ===================================================================== */}
-          {photoChunks.map((chunk, chunkIdx) => {
-            const isLastPhotoChunk = chunkIdx === photoChunks.length - 1;
-            const canFitSignaturesHere =
-              isLastPhotoChunk && !hasVideoPage && chunk.length <= 3 && includeSignatures;
+          {includePhotos &&
+            photoLayoutMode === "rombel-full" &&
+            rombelFullPages.map((page, idx) => {
+              const { rombel: rg, photos: pList, partIndex, totalParts } = page;
+              const photoCount = pList.length;
 
-            return (
+              return (
+                <div
+                  key={`rombel-full-${rg.key}-${partIndex}`}
+                  className="f4-landscape-page shadow-2xl rounded-sm flex flex-col justify-between"
+                  style={{
+                    width: "330mm",
+                    height: "215mm",
+                    padding: "8mm 12mm",
+                    boxSizing: "border-box",
+                    backgroundColor: "#ffffff",
+                    color: "#000000",
+                    fontFamily: "'Times New Roman', Times, serif",
+                  }}
+                >
+                  <div>
+                    {renderRunningHeader(
+                      `Dokumentasi Foto: ${rg.cleanKelas} (${idx + 1} dari ${rombelFullPages.length})`
+                    )}
+
+                    {/* Banner Header Rombel / Kelas yang Rapi & Elegan */}
+                    <div className="mb-2.5">
+                      <div className="flex items-center justify-between border-b-2 border-emerald-900 pb-1.5 mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="bg-emerald-900 text-white font-sans font-black text-[12px] px-3 py-1 rounded-md tracking-wider uppercase shadow-sm">
+                            {rg.cleanKelas}
+                          </span>
+                          <span className="text-[11px] font-bold text-slate-900 uppercase tracking-wide">
+                            {rg.madrasah}
+                          </span>
+                          {totalParts > 1 && (
+                            <span className="text-[9px] font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full border border-amber-300">
+                              Bagian {partIndex + 1} dari {totalParts}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-3 text-[9.5px] text-slate-700 font-sans">
+                          <span>
+                            Wali Kelas:{" "}
+                            <strong className="text-black font-bold">{rg.submitterName}</strong>
+                          </span>
+                          {rg.studentCount && (
+                            <>
+                              <span>•</span>
+                              <span>
+                                Siswa: <strong>{rg.studentCount} Siswa</strong>
+                              </span>
+                            </>
+                          )}
+                          <span>•</span>
+                          <span className="font-mono text-slate-600">{rg.timeFormatted}</span>
+                        </div>
+                      </div>
+
+                      {/* Catatan Pembiasaan / Refleksi Wali Kelas */}
+                      {includeNotes && rg.notes && (
+                        <div className="bg-emerald-50/70 border-l-4 border-emerald-700 px-3 py-1.5 rounded-r-md text-[9px] text-slate-800 italic leading-snug font-serif">
+                          <span className="font-bold text-emerald-900 not-italic mr-1.5 font-sans">
+                            Catatan Kegiatan / Refleksi:
+                          </span>
+                          "{rg.notes}"
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Galeri Foto Adaptif Sesuai Jumlah Foto Rombel */}
+                    <div className="w-full">
+                      {/* Kasus 1 Foto: Tampilan Pusat Megah */}
+                      {photoCount === 1 && (
+                        <div className="flex justify-center items-center py-1">
+                          <div style={{ width: "220mm" }}>
+                            {renderPhotoCard({
+                              item: pList[0],
+                              photoIdx: 0,
+                              cardHeight: "130mm",
+                              imageHeight: "112mm",
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Kasus 2 Foto: 2 Kolom Berdampingan Seimbang */}
+                      {photoCount === 2 && (
+                        <div className="grid grid-cols-2 gap-4 py-1">
+                          {pList.map((item, pIdx) =>
+                            renderPhotoCard({
+                              item,
+                              photoIdx: pIdx,
+                              cardHeight: "128mm",
+                              imageHeight: "110mm",
+                            })
+                          )}
+                        </div>
+                      )}
+
+                      {/* Kasus 3 Foto: 3 Kolom Berjajar Rapi */}
+                      {photoCount === 3 && (
+                        <div className="grid grid-cols-3 gap-3.5 py-1">
+                          {pList.map((item, pIdx) =>
+                            renderPhotoCard({
+                              item,
+                              photoIdx: pIdx,
+                              cardHeight: "122mm",
+                              imageHeight: "105mm",
+                            })
+                          )}
+                        </div>
+                      )}
+
+                      {/* Kasus 4 Foto: Grid 2 Kolom x 2 Baris */}
+                      {photoCount === 4 && (
+                        <div className="grid grid-cols-2 gap-3 py-1">
+                          {pList.map((item, pIdx) =>
+                            renderPhotoCard({
+                              item,
+                              photoIdx: pIdx,
+                              cardHeight: "68mm",
+                              imageHeight: "53mm",
+                            })
+                          )}
+                        </div>
+                      )}
+
+                      {/* Kasus 5 atau 6 Foto: Grid 3 Kolom x 2 Baris Presisi */}
+                      {photoCount >= 5 && (
+                        <div className="grid grid-cols-3 gap-3 py-1">
+                          {pList.map((item, pIdx) =>
+                            renderPhotoCard({
+                              item,
+                              photoIdx: pIdx,
+                              cardHeight: "68mm",
+                              imageHeight: "53mm",
+                            })
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {renderRunningFooter(pageCounter++, totalPages)}
+                </div>
+              );
+            })}
+
+          {/* =====================================================================
+              MODE 2: LAMPIRAN FOTO PER ROMBEL KOMPAK (2 ROMBEL PER HALAMAN)
+              ===================================================================== */}
+          {includePhotos &&
+            photoLayoutMode === "rombel-compact" &&
+            rombelCompactPairs.map((pair, pairIdx) => (
               <div
-                key={`photo-page-${chunkIdx}`}
+                key={`rombel-compact-page-${pairIdx}`}
                 className="f4-landscape-page shadow-2xl rounded-sm flex flex-col justify-between"
                 style={{
                   width: "330mm",
                   height: "215mm",
-                  padding: "10mm 15mm",
+                  padding: "8mm 12mm",
                   boxSizing: "border-box",
                   backgroundColor: "#ffffff",
                   color: "#000000",
@@ -1109,14 +2020,121 @@ export function ReportGenerator({
               >
                 <div>
                   {renderRunningHeader(
-                    `Lampiran Foto Dokumentasi (Bagian ${chunkIdx + 1} dari ${photoChunks.length})`
+                    `Dokumentasi Foto Per Rombel (Halaman ${pairIdx + 1} dari ${
+                      rombelCompactPairs.length
+                    })`
+                  )}
+
+                  <div className="space-y-3 mt-1">
+                    {pair.map((rg, rgIdx) => {
+                      const displayPhotos = rg.photos.slice(0, 4);
+
+                      return (
+                        <div
+                          key={rg.key}
+                          className="border border-slate-300 rounded-xl p-2.5 bg-slate-50/50"
+                          style={{
+                            height: "86mm",
+                            boxSizing: "border-box",
+                            display: "flex",
+                            flexDirection: "column",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          {/* Mini Header Rombel */}
+                          <div className="shrink-0 mb-1.5">
+                            <div className="flex items-center justify-between pb-1 border-b border-slate-300">
+                              <div className="flex items-center gap-2">
+                                <span className="bg-emerald-900 text-white font-sans font-black text-[10.5px] px-2 py-0.5 rounded tracking-wide uppercase">
+                                  {rg.cleanKelas}
+                                </span>
+                                <span className="text-[10px] font-bold text-slate-800">
+                                  {rg.madrasah}
+                                </span>
+                                {rg.studentCount && (
+                                  <span className="text-[9px] text-slate-500 font-sans">
+                                    • {rg.studentCount} Siswa
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[9px] text-slate-700 font-sans">
+                                Wali Kelas:{" "}
+                                <strong className="text-black font-semibold">
+                                  {rg.submitterName}
+                                </strong>{" "}
+                                • <span className="font-mono">{rg.timeFormatted}</span>
+                              </div>
+                            </div>
+
+                            {includeNotes && rg.notes && (
+                              <p className="text-[8.5px] text-slate-600 italic line-clamp-1 mt-1 font-serif">
+                                "{rg.notes}"
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Foto-Foto Rombel (Maks 4 foto berjajar dalam 1 baris) */}
+                          <div
+                            className={`grid gap-2.5 shrink-0 ${
+                              displayPhotos.length === 1
+                                ? "grid-cols-1 max-w-sm mx-auto"
+                                : displayPhotos.length === 2
+                                ? "grid-cols-2"
+                                : displayPhotos.length === 3
+                                ? "grid-cols-3"
+                                : "grid-cols-4"
+                            }`}
+                          >
+                            {displayPhotos.map((item, pIdx) =>
+                              renderPhotoCard({
+                                item,
+                                photoIdx: pIdx,
+                                cardHeight: "58mm",
+                                imageHeight: "45mm",
+                              })
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {renderRunningFooter(pageCounter++, totalPages)}
+              </div>
+            ))}
+
+          {/* =====================================================================
+              MODE 3: LAMPIRAN FOTO GRID CAMPURAN (6 FOTO PER HALAMAN)
+              ===================================================================== */}
+          {includePhotos &&
+            photoLayoutMode === "grid-flat" &&
+            photoChunksFlat.map((chunk, chunkIdx) => (
+              <div
+                key={`photo-flat-${chunkIdx}`}
+                className="f4-landscape-page shadow-2xl rounded-sm flex flex-col justify-between"
+                style={{
+                  width: "330mm",
+                  height: "215mm",
+                  padding: "8mm 12mm",
+                  boxSizing: "border-box",
+                  backgroundColor: "#ffffff",
+                  color: "#000000",
+                  fontFamily: "'Times New Roman', Times, serif",
+                }}
+              >
+                <div>
+                  {renderRunningHeader(
+                    `Lampiran Foto Dokumentasi (Bagian ${chunkIdx + 1} dari ${
+                      photoChunksFlat.length
+                    })`
                   )}
 
                   <div className="mt-1">
                     <h4 className="text-[11px] font-black uppercase mb-2 tracking-wide text-slate-900 flex items-center justify-between">
                       <span>
                         II. Lampiran Foto Dokumentasi Kegiatan Siswa ({chunkIdx * 6 + 1} -{" "}
-                        {Math.min((chunkIdx + 1) * 6, photoItems.length)} dari {photoItems.length})
+                        {Math.min((chunkIdx + 1) * 6, flatPhotos.length)} dari {flatPhotos.length})
                       </span>
                       <span className="text-[9.5px] font-normal lowercase text-slate-500 italic">
                         Diunggah oleh Wali Kelas melalui SIMATA
@@ -1124,79 +2142,23 @@ export function ReportGenerator({
                     </h4>
 
                     {/* Grid 3 Kolom x 2 Baris Presisi */}
-                    <div className="grid grid-cols-3 gap-3.5">
-                      {chunk.map(({ sub, file }) => {
-                        const highResThumbnailUrl = file.driveThumbnailUrl
-                          ? file.driveThumbnailUrl.replace(/=s\d+.*$/, "=s1000")
-                          : null;
-                        const imageProxySrc = highResThumbnailUrl
-                          ? `/api/proxy-image?url=${encodeURIComponent(highResThumbnailUrl)}`
-                          : null;
-
-                        return (
-                          <div
-                            key={file.id}
-                            className="border border-slate-300 rounded-lg p-2 bg-white flex flex-col justify-between shadow-none"
-                            style={{ height: "73mm", boxSizing: "border-box" }}
-                          >
-                            <div className="h-[49mm] w-full bg-slate-100 rounded overflow-hidden flex items-center justify-center border border-slate-200 relative">
-                              {imageProxySrc ? (
-                                <img
-                                  src={imageProxySrc}
-                                  alt={file.fileName}
-                                  className="h-full w-full object-cover object-center"
-                                  crossOrigin="anonymous"
-                                  loading="eager"
-                                />
-                              ) : (
-                                <div className="flex flex-col items-center justify-center text-slate-400 p-2 text-center">
-                                  <ImageIcon className="h-7 w-7 text-emerald-600 mb-1" />
-                                  <span className="text-[9px] font-bold text-slate-700 break-all line-clamp-2">
-                                    {file.fileName}
-                                  </span>
-                                  <span className="text-[8px] text-muted-foreground mt-0.5">
-                                    Google Drive Cloud
-                                  </span>
-                                </div>
-                              )}
-
-                              {/* Label Kelas & Waktu Elegan di atas Foto */}
-                              <div className="absolute top-1.5 left-1.5 bg-black/75 backdrop-blur-sm text-white px-2 py-0.5 rounded text-[8.5px] font-bold font-sans tracking-wide shadow-sm">
-                                {sub.kelas} ({sub.madrasah.includes("01") ? "MI 01" : "MI 02"})
-                              </div>
-                              <div className="absolute top-1.5 right-1.5 bg-white/90 backdrop-blur-sm text-slate-800 px-1.5 py-0.5 rounded text-[8px] font-mono font-bold shadow-sm">
-                                {sub.timeFormatted} WIB
-                              </div>
-                            </div>
-
-                            <div className="mt-1.5 text-[9px] leading-tight space-y-0.5 font-serif">
-                              <p className="text-slate-800 text-[9px] font-sans truncate">
-                                Wali Kelas: <strong className="text-black font-bold">{sub.submitterName}</strong>
-                              </p>
-                              {sub.notes ? (
-                                <p className="text-slate-600 italic text-[8.5px] line-clamp-2 leading-snug">
-                                  "{sub.notes}"
-                                </p>
-                              ) : (
-                                <p className="text-slate-400 italic text-[8px]">
-                                  Dokumentasi kegiatan siswa terarsip resmi di Google Drive.
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
+                    <div className="grid grid-cols-3 gap-3">
+                      {chunk.map((item, pIdx) =>
+                        renderPhotoCard({
+                          item,
+                          photoIdx: chunkIdx * 6 + pIdx,
+                          cardHeight: "72mm",
+                          imageHeight: "56mm",
+                          showSubInfo: true,
+                        })
+                      )}
                     </div>
                   </div>
-
-                  {/* Jika foto hanya 1 baris (<= 3 foto), render TTD langsung di lembar ini */}
-                  {canFitSignaturesHere && renderSignatures()}
                 </div>
 
                 {renderRunningFooter(pageCounter++, totalPages)}
               </div>
-            );
-          })}
+            ))}
 
           {/* =====================================================================
               HALAMAN LAMPIRAN VIDEO GOOGLE DRIVE (JIKA ADA)
@@ -1207,7 +2169,7 @@ export function ReportGenerator({
               style={{
                 width: "330mm",
                 height: "215mm",
-                padding: "10mm 15mm",
+                padding: "8mm 12mm",
                 boxSizing: "border-box",
                 backgroundColor: "#ffffff",
                 color: "#000000",
@@ -1220,7 +2182,7 @@ export function ReportGenerator({
                 <div className="mt-2">
                   <h4 className="text-[11px] font-black uppercase mb-1.5 tracking-wide text-slate-900 flex items-center justify-between">
                     <span>
-                      {includePhotos && photoItems.length > 0 ? "III." : "II."} Tautan / Link Video
+                      {includePhotos && flatPhotos.length > 0 ? "III." : "II."} Tautan / Link Video
                       Kegiatan Siswa (Google Drive Cloud)
                     </span>
                     <span className="text-[9.5px] font-normal lowercase text-slate-500 italic">
@@ -1230,29 +2192,35 @@ export function ReportGenerator({
 
                   <table className="print-table w-full border border-black text-left text-xs">
                     <thead>
-                      <tr className="bg-slate-100 border-b border-black text-black text-[10.5px]">
+                      <tr className="bg-slate-100 border-b border-black text-black text-[10px]">
                         <th className="p-1.5 border border-black text-center w-8">No</th>
-                        <th className="p-1.5 border border-black text-center w-28">Rombel & Madrasah</th>
+                        <th className="p-1.5 border border-black text-center w-28">
+                          Rombel & Madrasah
+                        </th>
                         <th className="p-1.5 border border-black w-40">Nama Wali Kelas</th>
                         <th className="p-1.5 border border-black w-48">Nama Berkas Video</th>
                         <th className="p-1.5 border border-black text-center w-20">Ukuran</th>
-                        <th className="p-1.5 border border-black">Tautan / Link Google Drive Cloud</th>
+                        <th className="p-1.5 border border-black">
+                          Tautan / Link Google Drive Cloud
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {videoItems.map(({ sub, file }, vIdx) => (
-                        <tr key={file.id} className="border-b border-black text-[10px]">
-                          <td className="p-1.5 border border-black text-center font-mono">{vIdx + 1}</td>
+                      {flatVideos.map(({ sub, file }, vIdx) => (
+                        <tr key={file.id} className="border-b border-black text-[9.5px]">
+                          <td className="p-1.5 border border-black text-center font-mono">
+                            {vIdx + 1}
+                          </td>
                           <td className="p-1.5 border border-black text-center font-bold">
                             {sub.kelas} ({sub.madrasah.includes("01") ? "MI 01" : "MI 02"})
                           </td>
                           <td className="p-1.5 border border-black font-semibold">
                             {sub.submitterName}
                           </td>
-                          <td className="p-1.5 border border-black font-mono text-[9.5px] break-all">
+                          <td className="p-1.5 border border-black font-mono text-[9px] break-all">
                             🎬 {file.fileName}
                           </td>
-                          <td className="p-1.5 border border-black text-center font-mono text-[9.5px]">
+                          <td className="p-1.5 border border-black text-center font-mono text-[9px]">
                             {file.fileSize ? formatBytes(file.fileSize) : "-"}
                           </td>
                           <td className="p-1.5 border border-black">
@@ -1260,7 +2228,7 @@ export function ReportGenerator({
                               href={file.driveUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-blue-700 underline font-mono text-[9.5px] break-all hover:text-blue-900"
+                              className="text-blue-700 underline font-mono text-[9px] break-all hover:text-blue-900"
                             >
                               {file.driveUrl || "Buka di Google Drive"}
                             </a>
@@ -1270,13 +2238,12 @@ export function ReportGenerator({
                     </tbody>
                   </table>
 
-                  <p className="text-[9px] text-slate-500 italic mt-1.5">
-                    * Berkas video disimpan secara aman pada cloud Google Drive resmi madrasah. Tautan link di atas aktif dan dapat diakses dengan membuka alamat URL pada dokumen PDF ini.
+                  <p className="text-[9px] text-slate-500 italic mt-2">
+                    * Berkas video disimpan secara aman pada cloud Google Drive resmi madrasah.
+                    Tautan link di atas aktif dan dapat diakses dengan mengklik alamat URL pada
+                    dokumen PDF ini.
                   </p>
                 </div>
-
-                {/* Lembar Pengesahan TTD jika muat di halaman video */}
-                {videoItems.length <= 6 && includeSignatures && renderSignatures()}
               </div>
 
               {renderRunningFooter(pageCounter++, totalPages)}
@@ -1284,7 +2251,7 @@ export function ReportGenerator({
           )}
 
           {/* =====================================================================
-              HALAMAN PENGESAHAN TERSENDIRI (JIKA DOKUMEN BANYAK LAMPIRAN & BELUM TERCETAK)
+              HALAMAN PENGESAHAN RESMI (LEMBAR PENGESAHAN DOKUMEN LAPORAN)
               ===================================================================== */}
           {pageCounter <= totalPages && includeSignatures && (
             <div
@@ -1292,7 +2259,7 @@ export function ReportGenerator({
               style={{
                 width: "330mm",
                 height: "215mm",
-                padding: "10mm 15mm",
+                padding: "8mm 12mm",
                 boxSizing: "border-box",
                 backgroundColor: "#ffffff",
                 color: "#000000",
@@ -1308,6 +2275,11 @@ export function ReportGenerator({
                   </h3>
                   <p className="text-xs font-bold uppercase text-slate-800">
                     PROGRAM PEMBIASAAN: {currentCategoryName}
+                    {selectedKelas !== "all" && (
+                      <span className="text-emerald-900 font-black ml-1.5">
+                        • {selectedKelas.toUpperCase()}
+                      </span>
+                    )}
                   </p>
                   <p className="text-[11px] text-slate-600">
                     Disahkan di Banyumas pada tanggal {reportData?.dateFormatted || selectedDate}
@@ -1316,7 +2288,9 @@ export function ReportGenerator({
 
                 <div className="max-w-2xl mx-auto my-6 p-4 rounded-xl border border-slate-300 bg-slate-50/70 text-xs text-slate-700 leading-relaxed text-justify">
                   <p>
-                    Demikian Laporan Rekapitulasi Dokumentasi Kegiatan Pembiasaan Siswa ini disusun secara otomatis melalui Sistem Informasi Madrasah Digital (SIMATA) MI Bustanul Huda Dawuhan berdasarkan data laporan harian wali kelas, lampiran dokumentasi foto, dan berkas video yang tersimpan pada cloud Google Drive madrasah. Laporan ini sah dan dapat dipergunakan sebagaimana mestinya untuk keperluan evaluasi madrasah maupun pelaporan kedinasan.
+                    {selectedKelas !== "all"
+                      ? `Demikian Laporan Dokumentasi Kegiatan Pembiasaan Siswa untuk ${selectedKelas} ini disusun secara sistematis dan rapi melalui Sistem Informasi Madrasah Digital (SIMATA) MI Bustanul Huda Dawuhan berdasarkan laporan harian wali kelas, dokumentasi foto, dan berkas video kegiatan yang tersimpan pada cloud Google Drive madrasah. Laporan ini sah dan dapat dipergunakan sebagaimana mestinya untuk keperluan portofolio kelas, evaluasi internal madrasah, maupun pelaporan kedinasan Kementerian Agama.`
+                      : `Demikian Laporan Rekapitulasi Dokumentasi Kegiatan Pembiasaan Siswa ini disusun secara sistematis dan rapi melalui Sistem Informasi Madrasah Digital (SIMATA) MI Bustanul Huda Dawuhan berdasarkan laporan harian wali kelas per rombel, dokumentasi foto, dan berkas video kegiatan yang tersimpan pada cloud Google Drive madrasah. Laporan ini sah dan dapat dipergunakan sebagaimana mestinya untuk keperluan evaluasi internal madrasah maupun pelaporan kedinasan Kementerian Agama.`}
                   </p>
                 </div>
 
@@ -1328,6 +2302,42 @@ export function ReportGenerator({
           )}
         </div>
       </div>
+
+      {/* Modal Zoom Foto di Layar */}
+      <Dialog open={Boolean(modalImage)} onOpenChange={(open) => !open && setModalImage(null)}>
+        <DialogContent className="max-w-3xl p-5 rounded-3xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+          <DialogHeader className="pb-3 border-b border-slate-200 dark:border-slate-800">
+            <DialogTitle className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <ImageIcon className="h-5 w-5 text-emerald-600" />
+              <span>{modalImage?.rombel || "Pratinjau Foto"}</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 truncate">
+              {modalImage?.title}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-3 flex flex-col items-center gap-3">
+            <div className="w-full max-h-[65vh] overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-1">
+              {modalImage?.src && (
+                <img
+                  src={modalImage.src}
+                  alt={modalImage.title}
+                  className="max-h-[60vh] max-w-full object-contain rounded-xl"
+                />
+              )}
+            </div>
+
+            {modalImage?.notes && (
+              <div className="w-full p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-xs text-slate-700 dark:text-slate-300 italic">
+                <span className="font-bold text-emerald-800 dark:text-emerald-400 not-italic mr-1.5">
+                  Catatan Wali Kelas:
+                </span>
+                "{modalImage.notes}"
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
