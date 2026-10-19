@@ -260,6 +260,20 @@ export function ReportGenerator({
         progressPercent: 45,
       });
 
+      // Simpan dan normalkan zoom transform container pratinjau agar html2canvas menangkap skala 1:1 tanpa terpotong
+      const zoomContainer = document.getElementById("report-zoom-container");
+      const savedTransform = zoomContainer?.style.transform;
+      if (zoomContainer) {
+        zoomContainer.style.transform = "none";
+      }
+
+      // Pastikan posisi horizontal scroll di 0 agar html2canvas tidak tergeser
+      const outerScroll = zoomContainer?.parentElement;
+      const savedScrollLeft = outerScroll?.scrollLeft || 0;
+      if (outerScroll) {
+        outerScroll.scrollLeft = 0;
+      }
+
       const pdf = new jsPDF({
         orientation: "landscape",
         unit: "mm",
@@ -267,56 +281,64 @@ export function ReportGenerator({
         compress: true,
       });
 
-      for (let i = 0; i < pageElements.length; i++) {
-        const pageEl = pageElements[i];
+      try {
+        for (let i = 0; i < pageElements.length; i++) {
+          const pageEl = pageElements[i];
 
-        showSwalLoading({
-          title: "Menyusun Halaman PDF...",
-          stepText: `Merender halaman ${i + 1} dari ${pageElements.length}...`,
-          progressPercent: Math.round(45 + ((i + 1) / pageElements.length) * 45),
-        });
+          showSwalLoading({
+            title: "Menyusun Halaman PDF...",
+            stepText: `Merender halaman ${i + 1} dari ${pageElements.length}...`,
+            progressPercent: Math.round(45 + ((i + 1) / pageElements.length) * 45),
+          });
 
-        // Simpan transform awal jika ada
-        const originalTransform = pageEl.style.transform;
-        pageEl.style.transform = "none";
+          const canvas = await html2canvas(pageEl, {
+            scale: 2, // 300 DPI high-quality print
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: "#ffffff",
+            logging: false,
+            width: pageEl.offsetWidth,
+            height: pageEl.offsetHeight,
+            scrollX: 0,
+            scrollY: 0,
+            x: 0,
+            y: 0,
+          });
 
-        const canvas = await html2canvas(pageEl, {
-          scale: 2, // 300 DPI high-quality print
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: "#ffffff",
-          logging: false,
-          windowWidth: 1400,
-        });
+          const imgData = canvas.toDataURL("image/jpeg", 0.95);
 
-        // Kembalikan transform
-        pageEl.style.transform = originalTransform;
+          if (i > 0) {
+            pdf.addPage([330, 215], "landscape");
+          }
 
-        const imgData = canvas.toDataURL("image/jpeg", 0.95);
-
-        if (i > 0) {
-          pdf.addPage([330, 215], "landscape");
+          pdf.addImage(imgData, "JPEG", 0, 0, 330, 215, undefined, "FAST");
         }
 
-        pdf.addImage(imgData, "JPEG", 0, 0, 330, 215, undefined, "FAST");
+        showSwalLoading({
+          title: "Menyimpan Berkas PDF...",
+          stepText: "Mengunduh berkas laporan ke perangkat Anda...",
+          progressPercent: 98,
+        });
+
+        const safeCategory = (reportData.category?.name || "Laporan")
+          .replace(/[^a-zA-Z0-9_-]/g, "_");
+        const safeDate = reportData.rawDate || selectedDate;
+        const filename = `Laporan_SIMATA_${safeCategory}_${safeDate}_F4_Landscape.pdf`;
+
+        pdf.save(filename);
+
+        closeSwal();
+        setIsExportingPdf(false);
+        toast.success("Berkas PDF F4 Landscape berhasil diunduh langsung!");
+      } finally {
+        // Kembalikan skala zoom tampilan layar
+        if (zoomContainer && savedTransform !== undefined) {
+          zoomContainer.style.transform = savedTransform;
+        }
+        if (outerScroll) {
+          outerScroll.scrollLeft = savedScrollLeft;
+        }
       }
-
-      showSwalLoading({
-        title: "Menyimpan Berkas PDF...",
-        stepText: "Mengunduh berkas laporan ke perangkat Anda...",
-        progressPercent: 98,
-      });
-
-      const safeCategory = (reportData.category?.name || "Laporan")
-        .replace(/[^a-zA-Z0-9_-]/g, "_");
-      const safeDate = reportData.rawDate || selectedDate;
-      const filename = `Laporan_SIMATA_${safeCategory}_${safeDate}_F4_Landscape.pdf`;
-
-      pdf.save(filename);
-
-      closeSwal();
-      setIsExportingPdf(false);
-      toast.success("Berkas PDF F4 Landscape berhasil diunduh langsung!");
     } catch (err: any) {
       console.error("PDF Download error:", err);
       closeSwal();
@@ -385,13 +407,13 @@ export function ReportGenerator({
 
   // Running Header Kecil untuk Halaman 2 dan seterusnya
   const renderRunningHeader = (pageTitle: string) => (
-    <div className="border-b border-slate-300 pb-1.5 mb-3 flex items-center justify-between text-[9.5px] text-slate-600 font-serif">
-      <div className="flex items-center gap-2">
-        <strong className="text-black uppercase">MI BUSTANUL HUDA DAWUHAN</strong>
+    <div className="border-b border-slate-300 pb-1 mb-2.5 flex items-center justify-between text-[9px] text-slate-600 font-serif">
+      <div className="flex items-center gap-1.5 truncate">
+        <strong className="text-black uppercase font-bold">MI BUSTANUL HUDA DAWUHAN</strong>
         <span>•</span>
-        <span>Laporan: {currentCategoryName}</span>
+        <span className="truncate">Laporan: {currentCategoryName}</span>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 shrink-0 text-right">
         <span className="font-semibold text-emerald-800">{pageTitle}</span>
         <span>•</span>
         <span>Tanggal: {reportData?.dateFormatted || selectedDate}</span>
@@ -459,15 +481,17 @@ export function ReportGenerator({
         @media print {
           @page {
             size: 330mm 215mm; /* Standar Ukuran Kertas F4 / Folio Landscape */
-            margin: 10mm 15mm;
+            margin: 0 !important;
           }
 
+          html,
           body {
             background-color: #ffffff !important;
             color: #000000 !important;
             font-family: "Times New Roman", Times, serif !important;
             margin: 0 !important;
             padding: 0 !important;
+            width: 330mm !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
@@ -485,15 +509,21 @@ export function ReportGenerator({
 
           .f4-landscape-page {
             width: 330mm !important;
+            min-width: 330mm !important;
+            max-width: 330mm !important;
             height: 215mm !important;
+            min-height: 215mm !important;
             max-height: 215mm !important;
             padding: 10mm 15mm !important;
+            box-sizing: border-box !important;
             box-shadow: none !important;
             border: none !important;
-            margin: 0 !important;
-            background: white !important;
-            page-break-after: always;
-            break-after: page;
+            margin: 0 auto !important;
+            background: #ffffff !important;
+            page-break-after: always !important;
+            break-after: page !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
             overflow: hidden !important;
           }
 
@@ -791,6 +821,7 @@ export function ReportGenerator({
           ========================================================================= */}
       <div className="bg-slate-200/80 dark:bg-slate-950/80 p-4 sm:p-8 rounded-3xl border border-slate-300/80 dark:border-slate-800 overflow-x-auto select-text shadow-inner">
         <div
+          id="report-zoom-container"
           className="flex flex-col items-center gap-8 mx-auto origin-top transition-transform duration-200"
           style={{
             transform: previewZoom !== 100 ? `scale(${previewZoom / 100})` : "none",
@@ -1093,24 +1124,27 @@ export function ReportGenerator({
                     </h4>
 
                     {/* Grid 3 Kolom x 2 Baris Presisi */}
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-3 gap-3.5">
                       {chunk.map(({ sub, file }) => {
-                        const imageProxySrc = file.driveThumbnailUrl
-                          ? `/api/proxy-image?url=${encodeURIComponent(file.driveThumbnailUrl)}`
+                        const highResThumbnailUrl = file.driveThumbnailUrl
+                          ? file.driveThumbnailUrl.replace(/=s\d+.*$/, "=s1000")
+                          : null;
+                        const imageProxySrc = highResThumbnailUrl
+                          ? `/api/proxy-image?url=${encodeURIComponent(highResThumbnailUrl)}`
                           : null;
 
                         return (
                           <div
                             key={file.id}
-                            className="border border-slate-400 p-1.5 rounded-lg bg-white flex flex-col justify-between"
-                            style={{ height: "70mm" }}
+                            className="border border-slate-300 rounded-lg p-2 bg-white flex flex-col justify-between shadow-none"
+                            style={{ height: "73mm", boxSizing: "border-box" }}
                           >
-                            <div className="h-40 w-full bg-slate-100 rounded overflow-hidden flex items-center justify-center border border-slate-200">
+                            <div className="h-[49mm] w-full bg-slate-100 rounded overflow-hidden flex items-center justify-center border border-slate-200 relative">
                               {imageProxySrc ? (
                                 <img
                                   src={imageProxySrc}
                                   alt={file.fileName}
-                                  className="h-full w-full object-cover"
+                                  className="h-full w-full object-cover object-center"
                                   crossOrigin="anonymous"
                                   loading="eager"
                                 />
@@ -1125,23 +1159,27 @@ export function ReportGenerator({
                                   </span>
                                 </div>
                               )}
+
+                              {/* Label Kelas & Waktu Elegan di atas Foto */}
+                              <div className="absolute top-1.5 left-1.5 bg-black/75 backdrop-blur-sm text-white px-2 py-0.5 rounded text-[8.5px] font-bold font-sans tracking-wide shadow-sm">
+                                {sub.kelas} ({sub.madrasah.includes("01") ? "MI 01" : "MI 02"})
+                              </div>
+                              <div className="absolute top-1.5 right-1.5 bg-white/90 backdrop-blur-sm text-slate-800 px-1.5 py-0.5 rounded text-[8px] font-mono font-bold shadow-sm">
+                                {sub.timeFormatted} WIB
+                              </div>
                             </div>
 
-                            <div className="mt-1.5 text-[9.5px] leading-tight space-y-0.5">
-                              <div className="flex items-center justify-between font-bold">
-                                <span className="text-black">
-                                  {sub.kelas} ({sub.madrasah.includes("01") ? "MI 01" : "MI 02"})
-                                </span>
-                                <span className="font-mono text-[8.5px] text-slate-600">
-                                  {sub.timeFormatted}
-                                </span>
-                              </div>
-                              <p className="text-slate-700 text-[9px] truncate">
-                                Wali Kelas: <strong>{sub.submitterName}</strong>
+                            <div className="mt-1.5 text-[9px] leading-tight space-y-0.5 font-serif">
+                              <p className="text-slate-800 text-[9px] font-sans truncate">
+                                Wali Kelas: <strong className="text-black font-bold">{sub.submitterName}</strong>
                               </p>
-                              {sub.notes && (
-                                <p className="text-slate-600 italic text-[8.5px] line-clamp-1">
+                              {sub.notes ? (
+                                <p className="text-slate-600 italic text-[8.5px] line-clamp-2 leading-snug">
                                   "{sub.notes}"
+                                </p>
+                              ) : (
+                                <p className="text-slate-400 italic text-[8px]">
+                                  Dokumentasi kegiatan siswa terarsip resmi di Google Drive.
                                 </p>
                               )}
                             </div>
