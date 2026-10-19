@@ -250,6 +250,235 @@ export async function uploadStreamToDrive(params: {
 }
 
 /**
+ * Mendapatkan valid Authorization header (Bearer token) untuk direct HTTP request ke Google Drive API
+ */
+export async function getGoogleDriveAuthHeader(): Promise<string | null> {
+  try {
+    const adminOauth = await getAdminDriveClient();
+    if (adminOauth && adminOauth.drive) {
+      const oauth2Client = (adminOauth.drive as any).context?._options?.auth;
+      if (oauth2Client) {
+        const authHeaders = await oauth2Client.getRequestHeaders();
+        const header =
+          authHeaders.get("authorization") ||
+          `Bearer ${(await oauth2Client.getAccessToken()).token}`;
+        if (header) return header;
+      }
+    }
+
+    const serviceAccountPath = path.join(process.cwd(), "service-account.json");
+    if (fs.existsSync(serviceAccountPath)) {
+      const auth = new google.auth.GoogleAuth({
+        keyFile: serviceAccountPath,
+        scopes: SCOPES,
+      });
+      const client = await auth.getClient();
+      const tokenRes = await client.getAccessToken();
+      if (tokenRes.token) return `Bearer ${tokenRes.token}`;
+    }
+
+    if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+      const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+      const auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: SCOPES,
+      });
+      const client = await auth.getClient();
+      const tokenRes = await client.getAccessToken();
+      if (tokenRes.token) return `Bearer ${tokenRes.token}`;
+    }
+
+    if (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+      const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+      const privateKey = process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n");
+      const auth = new google.auth.JWT({
+        email: clientEmail,
+        key: privateKey,
+        scopes: SCOPES,
+      });
+      const tokenRes = await auth.getAccessToken();
+      if (tokenRes.token) return `Bearer ${tokenRes.token}`;
+    }
+
+    return null;
+  } catch (err) {
+    console.error("[getGoogleDriveAuthHeader error]", err);
+    return null;
+  }
+}
+
+/**
+ * Membuat Sesi Resumable Upload di Google Drive API untuk berkas berukuran besar (misal video 50MB+)
+ */
+export async function createResumableDriveSession(params: {
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  folderId?: string | null;
+}): Promise<{ sessionUrl: string | null; isMock: boolean; mockId?: string }> {
+  const { drive, isMock } = await getGoogleDriveClientAsync();
+  const authHeader = await getGoogleDriveAuthHeader();
+
+  if (isMock || !drive || !authHeader) {
+    const mockId = `mock_drive_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    return {
+      sessionUrl: `mock_session_${mockId}`,
+      isMock: true,
+      mockId,
+    };
+  }
+
+  const targetFolderId = params.folderId || process.env.GOOGLE_DRIVE_FOLDER_ID;
+  const metadata: { name: string; parents?: string[] } = {
+    name: params.fileName,
+  };
+  if (targetFolderId && targetFolderId.trim() !== "") {
+    metadata.parents = [targetFolderId.trim()];
+  }
+
+  const res = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true",
+    {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Type": params.mimeType,
+        "X-Upload-Content-Length": String(params.fileSize),
+      },
+      body: JSON.stringify(metadata),
+    }
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Google Drive API gagal menginisiasi sesi unggahan: ${errText}`);
+  }
+
+  const sessionUrl = res.headers.get("location");
+  if (!sessionUrl) {
+    throw new Error("Google Drive tidak mengembalikan header Location (URL sesi upload).");
+  }
+
+  return { sessionUrl, isMock: false };
+}
+
+/**
+ * Mengirim potongan biner (chunk) ke Sesi Resumable Upload Google Drive
+ */
+export async function sendChunkToDrive(params: {
+  sessionUrl: string;
+  chunkBuffer: Buffer;
+  startByte: number;
+  endByte: number;
+  totalSize: number;
+  mimeType: string;
+  fileName: string;
+  isMock?: boolean;
+}): Promise<{ isComplete: boolean; driveFile?: DriveUploadResult }> {
+  const { sessionUrl, chunkBuffer, startByte, endByte, totalSize, mimeType, fileName, isMock } = params;
+
+  // Handle mock mode (simulasi tanpa akun Google asli)
+  if (isMock || sessionUrl.startsWith("mock_session_")) {
+    const isComplete = endByte + 1 >= totalSize;
+    if (isComplete) {
+      const mockId = `mock_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      return {
+        isComplete: true,
+        driveFile: {
+          fileId: mockId,
+          name: fileName,
+          webViewLink: `https://drive.google.com/file/d/${mockId}/view?usp=sharing`,
+          thumbnailLink: mimeType.startsWith("image/")
+            ? "https://images.unsplash.com/photo-1544717305-2782549b5136?w=600&auto=format&fit=crop&q=80"
+            : null,
+          mimeType,
+          size: totalSize,
+          isMock: true,
+        },
+      };
+    }
+    return { isComplete: false };
+  }
+
+  // Kirim potongan byte chunk ke Google Drive
+  const res = await fetch(sessionUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Range": `bytes ${startByte}-${endByte}/${totalSize}`,
+      "Content-Length": String(chunkBuffer.length),
+      "Content-Type": mimeType,
+    },
+    body: new Uint8Array(chunkBuffer),
+  });
+
+  if (res.status === 308) {
+    // 308 Resume Incomplete: Berhasil diterima, Google menunggu potongan berikutnya
+    return { isComplete: false };
+  }
+
+  if (res.status === 200 || res.status === 201) {
+    // Unggahan berkas selesai sepenuhnya!
+    const data = await res.json();
+    const fileId = data.id;
+
+    const { drive } = await getGoogleDriveClientAsync();
+    if (drive && fileId) {
+      // Atur izin baca publik untuk tautan
+      try {
+        await drive.permissions.create({
+          fileId,
+          requestBody: { role: "reader", type: "anyone" },
+          supportsAllDrives: true,
+        });
+      } catch (permError) {
+        console.warn("[Google Drive Permissions Warning]", permError);
+      }
+
+      // Ambil metadata tautan lengkap Google Drive
+      try {
+        const fileRes = await drive.files.get({
+          fileId,
+          fields: "id, name, webViewLink, thumbnailLink, mimeType, size",
+          supportsAllDrives: true,
+        });
+
+        return {
+          isComplete: true,
+          driveFile: {
+            fileId: fileRes.data.id || fileId,
+            name: fileRes.data.name || fileName,
+            webViewLink: fileRes.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
+            thumbnailLink: fileRes.data.thumbnailLink || null,
+            mimeType: fileRes.data.mimeType || mimeType,
+            size: fileRes.data.size ? parseInt(fileRes.data.size, 10) : totalSize,
+            isMock: false,
+          },
+        };
+      } catch (getErr) {
+        console.warn("[Google Drive files.get Warning]", getErr);
+      }
+    }
+
+    return {
+      isComplete: true,
+      driveFile: {
+        fileId,
+        name: data.name || fileName,
+        webViewLink: data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
+        thumbnailLink: data.thumbnailLink || null,
+        mimeType: data.mimeType || mimeType,
+        size: totalSize,
+        isMock: false,
+      },
+    };
+  }
+
+  const errText = await res.text();
+  throw new Error(`Gagal mengunggah potongan berkas ke Google Drive (Status ${res.status}): ${errText}`);
+}
+
+/**
  * Membersihkan dan menstandarisasi penamaan berkas sebelum diunggah ke Google Drive
  * Format: [Kategori]_[Kelas]_[YYYYMMDD]_[Pengirim]_[NamaBerkasAsliBersih]_[Nomor].[ext]
  */

@@ -594,129 +594,224 @@ export function PublicUploadPortal({
       }
     }
 
-    // Periksa total ukuran transmisi (Batas aman Serverless Vercel: 4.2 MB)
-    const totalPayloadBytes = readyFiles.reduce((acc, f) => acc + f.size, 0);
-    if (totalPayloadBytes > 4.2 * 1024 * 1024) {
-      setIsUploading(false);
-      setUploadProgress(0);
-      closeSwal();
-      showSwalWarning(
-        "Ukuran Berkas Melebihi Batas Transmisi",
-        `Total ukuran berkas (<b>${formatBytes(totalPayloadBytes)}</b>) melebihi batas pengiriman server cloud (maksimal 4.2 MB per pengiriman).<br><br><b>Saran Solusi:</b><br>• Jika ada video, perpendek durasi video atau turunkan resolusinya.<br>• Atau kirim berkas foto terlebih dahulu, lalu kirim video berikutnya sebagai <b>Berkas Susulan</b>.`
-      );
-      return;
-    }
-
-    // 4. Prepare FormData
-    const formData = new FormData();
-    formData.append("categoryId", selectedCategory.id);
-    formData.append("madrasah", selectedMadrasah);
-    formData.append("activityDate", activityDate);
-    if (submitterName.trim()) formData.append("submitterName", submitterName.trim());
-    if (submitterContact.trim()) formData.append("submitterContact", submitterContact.trim());
-    if (notes.trim()) formData.append("notes", notes.trim());
-    formData.append("fieldsData", JSON.stringify(fieldAnswers));
-    if (allowSupplementary) formData.append("allowSupplementary", "true");
-    if (replacePrevious && duplicateInfo?.existingSubmission) {
-      formData.append("replaceSubmissionId", duplicateInfo.existingSubmission.id);
-    }
-
+    // Validasi ukuran masing-masing berkas terhadap batas maksimal kategori (default 100 MB)
+    const categoryLimitMb = selectedCategory.maxFileSizeMb || 100;
     for (const file of readyFiles) {
-      formData.append("files", file);
+      const sizeMb = file.size / (1024 * 1024);
+      if (sizeMb > categoryLimitMb) {
+        setIsUploading(false);
+        setUploadProgress(0);
+        closeSwal();
+        showSwalWarning(
+          "Ukuran Berkas Melebihi Batas Kategori",
+          `Berkas "<b>${file.name}</b>" berukuran <b>${formatBytes(
+            file.size
+          )}</b>, melebihi batas maksimal kategori (maksimal ${categoryLimitMb} MB per berkas).<br><br>Mohon kurangi durasi atau resolusi video sebelum mengunggah.`
+        );
+        return;
+      }
     }
 
-    updateSwalLoading("2/3 Menghubungkan ke Google Drive Cloud & membuat folder rombel...", 35);
-    setUploadProgress(35);
-
-    const progressTimer = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 85) return prev;
-        const next = prev + 10;
-        if (next >= 50 && next < 75) {
-          updateSwalLoading("2/3 Membuat struktur subfolder per rombel kelas...", next);
-        } else if (next >= 75) {
-          updateSwalLoading("3/3 Menyimpan dan mengamankan arsip madrasah...", next);
-        }
-        return next;
-      });
-    }, 400);
+    const totalAllBytes = readyFiles.reduce((acc, f) => acc + f.size, 0);
 
     try {
-      const response = await fetch("/api/upload", {
+      updateSwalLoading("1/3 Menyiapkan struktur folder rombel di Google Drive...", 15);
+      setUploadProgress(15);
+
+      // 1. Inisiasi Submisi & Siapkan Sesi Resumable Upload Google Drive
+      const initRes = await fetch("/api/upload/init", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          categoryId: selectedCategory.id,
+          madrasah: selectedMadrasah,
+          activityDate,
+          submitterName: submitterName.trim() || null,
+          submitterContact: submitterContact.trim() || null,
+          notes: notes.trim() || null,
+          fieldsData: fieldAnswers,
+          allowSupplementary,
+          replaceSubmissionId:
+            replacePrevious && duplicateInfo?.existingSubmission
+              ? duplicateInfo.existingSubmission.id
+              : null,
+          files: readyFiles.map((f) => ({
+            name: f.name,
+            size: f.size,
+            type: f.type || "application/octet-stream",
+          })),
+        }),
       });
 
-      // Parse teks terlebih dahulu agar tidak crash jika Vercel mengembalikan halaman HTML (misal error 413/504)
-      const responseText = await response.text();
-      let result: any = null;
+      const initText = await initRes.text();
+      let initData: any = null;
       try {
-        result = JSON.parse(responseText);
+        initData = JSON.parse(initText);
       } catch {
-        result = null;
+        initData = null;
       }
 
-      clearInterval(progressTimer);
-
-      if (response.ok && result?.success) {
-        setUploadProgress(100);
-        updateSwalLoading("Unggahan selesai! Menyiapkan tanda terima...", 100);
-
-        setTimeout(() => {
-          setIsUploading(false);
-          setSubmissionResult(result);
-          closeSwal();
-
-          // Bersihkan draf otomatis dari penyimpanan HP setelah sukses terkirim
-          try {
-            localStorage.removeItem(DRAFT_STORAGE_KEY);
-          } catch {}
-          setHasRestoredDraft(false);
-          setDraftSavedAt(null);
-
-          const breakdown = [];
-          if (photoFiles.length > 0) breakdown.push(`${photoFiles.length} foto`);
-          if (videoFiles.length > 0) breakdown.push(`${videoFiles.length} video`);
-          const countDetail = breakdown.length > 0 ? ` (${breakdown.join(" & ")})` : "";
-
-          // Tampilkan SweetAlert Success yang mewah
-          showSwalSuccess({
-            title: "Alhamdulillah! Berkas Berhasil Terkirim",
-            message: `Dokumentasi ${selectedMadrasah} telah tersusun rapi di Google Drive untuk ${
-              fieldAnswers.kelas || "rombel kelas"
-            }.${countDetail}`,
-            folderName: result.submissionFolderName,
-            folderUrl: result.submissionFolderUrl,
-            filesCount: selectedFiles.length,
-            onUploadAgain: handleResetForm,
-          });
-
-          toast.success("Berkas berhasil diarsipkan ke Google Drive!");
-        }, 600);
-      } else {
+      if (!initRes.ok || !initData?.success) {
         setIsUploading(false);
         setUploadProgress(0);
         closeSwal();
 
-        let errorTitle = "Gagal Mengunggah Berkas";
-        let errorMsg = result?.error;
-
-        if (!errorMsg) {
-          if (response.status === 413 || responseText.includes("PAYLOAD_TOO_LARGE")) {
-            errorTitle = "Ukuran Berkas Melebihi Batas Server";
-            errorMsg = "Kapasitas berkas terlalu besar untuk dikirim sekaligus. Mohon kurangi ukuran video atau kirim berkas foto terlebih dahulu.";
-          } else if (response.status === 504 || response.status === 502) {
-            errorTitle = "Waktu Proses Server Habis";
-            errorMsg = "Server Google Drive membutuhkan waktu lebih lama untuk memproses. Isian formulir Anda tetap tersimpan aman di HP ini. Silakan tekan tombol kirim sekali lagi.";
-          } else {
-            errorMsg = `Server merespons status ${response.status} (${response.statusText || "Internal Server Error"}). Silakan coba beberapa saat lagi.`;
-          }
+        if (initRes.status === 409 && initData?.isDuplicate) {
+          showSwalWarning("Pengiriman Dicegah", initData.error);
+          return;
         }
 
-        showSwalError(errorTitle, errorMsg);
+        showSwalError(
+          "Gagal Menyiapkan Pengiriman",
+          initData?.error || `Server merespons kode ${initRes.status}. Silakan coba kembali.`
+        );
+        return;
       }
+
+      // 2. Transmisikan Berkas Menggunakan Potongan Chunk (2 MiB per chunk - aman di serverless & mobile)
+      const CHUNK_SIZE = 2 * 1024 * 1024; // 2,097,152 bytes (kelipatan 256 KiB)
+      let totalUploadedBytes = 0;
+      const uploadedFilesResults: any[] = [];
+
+      for (let fileIdx = 0; fileIdx < readyFiles.length; fileIdx++) {
+        const file = readyFiles[fileIdx];
+        const fileSession = initData.files[fileIdx];
+        const fileSize = file.size;
+        const isVideo = file.type.startsWith("video/");
+        const fileLabel = isVideo ? "Video Kegiatan" : "Foto Dokumentasi";
+
+        let startByte = 0;
+        while (startByte < fileSize) {
+          const endByte = Math.min(startByte + CHUNK_SIZE, fileSize) - 1;
+          const chunkBlob = file.slice(startByte, endByte + 1);
+
+          const chunkFormData = new FormData();
+          chunkFormData.append("submissionId", initData.submissionId);
+          chunkFormData.append("categoryId", selectedCategory.id);
+          chunkFormData.append("fileIndex", String(fileIdx));
+          chunkFormData.append("cleanFileName", fileSession.cleanFileName);
+          chunkFormData.append("fileType", fileSession.fileType);
+          chunkFormData.append("mimeType", fileSession.mimeType);
+          chunkFormData.append("totalSize", String(fileSize));
+          chunkFormData.append("startByte", String(startByte));
+          chunkFormData.append("endByte", String(endByte));
+          chunkFormData.append("sessionUrl", fileSession.sessionUrl || "");
+          chunkFormData.append("isMock", String(fileSession.isMock));
+          if (initData.targetFolderId) {
+            chunkFormData.append("targetFolderId", initData.targetFolderId);
+          }
+          chunkFormData.append("chunk", chunkBlob, file.name);
+
+          // Toleransi retry otomatis hingga 3 kali jika sinyal HP naik-turun
+          let chunkSuccess = false;
+          let lastChunkError: any = null;
+
+          for (let retry = 0; retry < 3; retry++) {
+            try {
+              const chunkRes = await fetch("/api/upload/chunk", {
+                method: "POST",
+                body: chunkFormData,
+              });
+
+              const chunkText = await chunkRes.text();
+              let chunkJson: any = null;
+              try {
+                chunkJson = JSON.parse(chunkText);
+              } catch {}
+
+              if (chunkRes.ok && chunkJson?.success) {
+                chunkSuccess = true;
+                if (chunkJson.isComplete && chunkJson.file) {
+                  uploadedFilesResults.push(chunkJson.file);
+                }
+                break;
+              } else {
+                lastChunkError = new Error(
+                  chunkJson?.error || `Chunk error (HTTP ${chunkRes.status})`
+                );
+              }
+            } catch (err: any) {
+              lastChunkError = err;
+            }
+
+            // Tunggu sebelum mencoba kirim ulang potongan
+            await new Promise((r) => setTimeout(r, 1000 * (retry + 1)));
+          }
+
+          if (!chunkSuccess) {
+            throw (
+              lastChunkError ||
+              new Error(`Gagal mengirimkan bagian berkas "${file.name}". Silakan coba lagi.`)
+            );
+          }
+
+          const chunkBytesSent = endByte - startByte + 1;
+          totalUploadedBytes += chunkBytesSent;
+          startByte = endByte + 1;
+
+          // Perbarui indikator progress SweetAlert dan progress bar secara akurat
+          const overallPercent = Math.min(
+            96,
+            Math.max(15, Math.round((totalUploadedBytes / totalAllBytes) * 92))
+          );
+          setUploadProgress(overallPercent);
+
+          updateSwalLoading(
+            `2/3 Mengunggah ${fileLabel} (${fileIdx + 1}/${readyFiles.length}): ${formatBytes(
+              totalUploadedBytes
+            )} dari ${formatBytes(totalAllBytes)}...`,
+            overallPercent
+          );
+        }
+      }
+
+      // 3. Selesai! Siapkan Tanda Terima
+      setUploadProgress(100);
+      updateSwalLoading("3/3 Unggahan selesai! Menyiapkan tanda terima arsip...", 100);
+
+      const finalResult = {
+        success: true,
+        submissionId: initData.submissionId,
+        categoryName: initData.categoryName,
+        submissionFolderName: initData.submissionFolderName,
+        submissionFolderUrl: initData.submissionFolderUrl,
+        filesCount: uploadedFilesResults.length,
+        files: uploadedFilesResults,
+        message: "Berkas dan data formulir berhasil dikirim dan tersimpan rapi di Google Drive!",
+      };
+
+      setTimeout(() => {
+        setIsUploading(false);
+        setSubmissionResult(finalResult);
+        closeSwal();
+
+        // Bersihkan draf otomatis dari penyimpanan HP setelah sukses terkirim
+        try {
+          localStorage.removeItem(DRAFT_STORAGE_KEY);
+        } catch {}
+        setHasRestoredDraft(false);
+        setDraftSavedAt(null);
+
+        const breakdown = [];
+        if (photoFiles.length > 0) breakdown.push(`${photoFiles.length} foto`);
+        if (videoFiles.length > 0) breakdown.push(`${videoFiles.length} video`);
+        const countDetail = breakdown.length > 0 ? ` (${breakdown.join(" & ")})` : "";
+
+        // Tampilkan SweetAlert Success yang mewah
+        showSwalSuccess({
+          title: "Alhamdulillah! Berkas Berhasil Terkirim",
+          message: `Dokumentasi ${selectedMadrasah} telah tersusun rapi di Google Drive untuk ${
+            fieldAnswers.kelas || "rombel kelas"
+          }.${countDetail}`,
+          folderName: finalResult.submissionFolderName,
+          folderUrl: finalResult.submissionFolderUrl,
+          filesCount: selectedFiles.length,
+          onUploadAgain: handleResetForm,
+        });
+
+        toast.success("Berkas berhasil diarsipkan ke Google Drive!");
+      }, 600);
     } catch (err: any) {
-      clearInterval(progressTimer);
       setIsUploading(false);
       setUploadProgress(0);
       closeSwal();
