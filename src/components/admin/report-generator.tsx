@@ -25,6 +25,10 @@ import {
   Quote,
   Users,
   Clock,
+  User,
+  Building2,
+  CheckCircle2,
+  PenLine,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,6 +63,7 @@ interface CategoryOption {
 interface MadrasahOption {
   id: string;
   name: string;
+  code?: string | null;
 }
 
 interface FlattenedMediaItem {
@@ -118,12 +123,82 @@ export function ReportGenerator({
   const [includeVideos, setIncludeVideos] = useState<boolean>(true);
   const [includeNotes, setIncludeNotes] = useState<boolean>(true);
   const [includeSignatures, setIncludeSignatures] = useState<boolean>(true);
-  const [headmasterName, setHeadmasterName] = useState<string>("H. Ahmad Fauzi, S.Pd.I., M.Pd.");
-  const [headmasterNip, setHeadmasterNip] = useState<string>("19750812 200501 1 003");
-  const [coordinatorName, setCoordinatorName] = useState<string>("Vikar Maulana Arrisyad, S.Kom.");
-  const [coordinatorNip, setCoordinatorNip] = useState<string>("19920415 201903 1 008");
-  const [waliKelasName, setWaliKelasName] = useState<string>("");
-  const [waliKelasNip, setWaliKelasNip] = useState<string>("-");
+
+  // Pengaturan Kepala Madrasah MI 01 & MI 02
+  const [headmaster01Name, setHeadmaster01Name] = useState<string>(
+    "H. Ahmad Fauzi, S.Pd.I., M.Pd."
+  );
+  const [headmaster01Nip, setHeadmaster01Nip] = useState<string>(
+    "19750812 200501 1 003"
+  );
+  const [headmaster02Name, setHeadmaster02Name] = useState<string>(
+    "Drs. H. M. Syukron, M.Pd.I."
+  );
+  const [headmaster02Nip, setHeadmaster02Nip] = useState<string>(
+    "19780520 200701 1 012"
+  );
+
+  // Pilihan penandatangan Kepala Madrasah di dokumen: 'auto' | 'MI01' | 'MI02'
+  const [headmasterChoice, setHeadmasterChoice] = useState<"auto" | "MI01" | "MI02">("auto");
+
+  // Pengaturan Guru yang Mengisi
+  const [teacherRoleTitle, setTeacherRoleTitle] = useState<string>("Guru yang Mengisi");
+  const [teacherCustomName, setTeacherCustomName] = useState<string>("");
+  const [teacherNip, setTeacherNip] = useState<string>("-");
+
+  // Muat pengaturan TTD yang tersimpan dari localStorage di peramban
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const s01Name = localStorage.getItem("simata_report_km01_name");
+      const s01Nip = localStorage.getItem("simata_report_km01_nip");
+      const s02Name = localStorage.getItem("simata_report_km02_name");
+      const s02Nip = localStorage.getItem("simata_report_km02_nip");
+      const sTeacherRole = localStorage.getItem("simata_report_teacher_role");
+      const sTeacherNip = localStorage.getItem("simata_report_teacher_nip");
+
+      if (s01Name) setHeadmaster01Name(s01Name);
+      if (s01Nip) setHeadmaster01Nip(s01Nip);
+      if (s02Name) setHeadmaster02Name(s02Name);
+      if (s02Nip) setHeadmaster02Nip(s02Nip);
+      if (sTeacherRole) setTeacherRoleTitle(sTeacherRole);
+      if (sTeacherNip) setTeacherNip(sTeacherNip);
+    } catch (e) {
+      console.warn("Could not read signature settings from localStorage:", e);
+    }
+  }, []);
+
+  const handleUpdateHeadmaster01 = (name: string, nip: string) => {
+    setHeadmaster01Name(name);
+    setHeadmaster01Nip(nip);
+    try {
+      localStorage.setItem("simata_report_km01_name", name);
+      localStorage.setItem("simata_report_km01_nip", nip);
+    } catch {}
+  };
+
+  const handleUpdateHeadmaster02 = (name: string, nip: string) => {
+    setHeadmaster02Name(name);
+    setHeadmaster02Nip(nip);
+    try {
+      localStorage.setItem("simata_report_km02_name", name);
+      localStorage.setItem("simata_report_km02_nip", nip);
+    } catch {}
+  };
+
+  const handleUpdateTeacherRole = (role: string) => {
+    setTeacherRoleTitle(role);
+    try {
+      localStorage.setItem("simata_report_teacher_role", role);
+    } catch {}
+  };
+
+  const handleUpdateTeacherNip = (nip: string) => {
+    setTeacherNip(nip);
+    try {
+      localStorage.setItem("simata_report_teacher_nip", nip);
+    } catch {}
+  };
 
   // Zoom control untuk pratinjau F4 Landscape di layar
   const [previewZoom, setPreviewZoom] = useState<number>(100);
@@ -276,16 +351,108 @@ export function ReportGenerator({
     );
   }, [reportData, selectedKelas]);
 
-  // Otomatis sinkronkan nama wali kelas saat memilih rombel/kelas
+  // Otomatis sinkronkan nama guru pengisi saat memilih rombel/kelas
   useEffect(() => {
     if (selectedKelas !== "all") {
       if (selectedClassInfo?.submitterName) {
-        setWaliKelasName(selectedClassInfo.submitterName);
+        setTeacherCustomName(selectedClassInfo.submitterName);
       } else {
-        setWaliKelasName("");
+        setTeacherCustomName("");
       }
     }
   }, [selectedKelas, selectedClassInfo]);
+
+  // Deteksi otomatis madrasah yang relevan berdasarkan kelas atau filter yang dipilih
+  const detectedMadrasahCode = useMemo<"MI01" | "MI02">(() => {
+    // 1. Cek dari kelas terpilih jika ada data submisi
+    if (selectedKelas !== "all" && selectedClassInfo?.madrasah) {
+      if (selectedClassInfo.madrasah.includes("02")) return "MI02";
+      if (selectedClassInfo.madrasah.includes("01")) return "MI01";
+    }
+
+    // 2. Cek dari filter madrasah yang dipilih
+    if (selectedMadrasah !== "all") {
+      const mObj = initialMadrasahs.find((m) => m.id === selectedMadrasah);
+      const combined = `${mObj?.name || ""} ${mObj?.code || ""} ${selectedMadrasah}`;
+      if (combined.includes("02")) return "MI02";
+      if (combined.includes("01")) return "MI01";
+    }
+
+    // 3. Cek dari submisi yang sedang tampil
+    const firstSub = filteredSubmissions[0];
+    if (firstSub?.madrasah?.includes("02")) return "MI02";
+    if (firstSub?.madrasah?.includes("01")) return "MI01";
+
+    return "MI01";
+  }, [
+    selectedKelas,
+    selectedClassInfo,
+    selectedMadrasah,
+    initialMadrasahs,
+    filteredSubmissions,
+  ]);
+
+  // Kode madrasah yang aktif digunakan untuk Kepala Madrasah & Kop Surat
+  const activeMadrasahCode =
+    headmasterChoice === "auto" ? detectedMadrasahCode : headmasterChoice;
+
+  // Profil Kepala Madrasah Aktif
+  const activeHeadmaster = useMemo(() => {
+    if (activeMadrasahCode === "MI02") {
+      return {
+        code: "MI 02",
+        shortName: "MI 02 Dawuhan",
+        fullName: "MI Bustanul Huda 02 Dawuhan",
+        name: headmaster02Name,
+        nip: headmaster02Nip,
+        nsm: "111233020085",
+        npsn: "60710778",
+      };
+    }
+    return {
+      code: "MI 01",
+      shortName: "MI 01 Dawuhan",
+      fullName: "MI Bustanul Huda 01 Dawuhan",
+      name: headmaster01Name,
+      nip: headmaster01Nip,
+      nsm: "111233020084",
+      npsn: "60710777",
+    };
+  }, [
+    activeMadrasahCode,
+    headmaster01Name,
+    headmaster01Nip,
+    headmaster02Name,
+    headmaster02Nip,
+  ]);
+
+  // Data Profil Guru yang Mengisi
+  const activeTeacher = useMemo(() => {
+    const rawName =
+      teacherCustomName.trim() ||
+      (selectedKelas !== "all" && selectedClassInfo?.submitterName
+        ? selectedClassInfo.submitterName
+        : filteredSubmissions[0]?.submitterName || "Guru Pengisi");
+
+    let role = teacherRoleTitle.trim() || "Guru yang Mengisi";
+    if (selectedKelas !== "all" && role === "Guru yang Mengisi") {
+      role = `Guru yang Mengisi (${selectedKelas})`;
+    }
+
+    return {
+      name: rawName,
+      nip: teacherNip && teacherNip !== "-" ? `NIP. ${teacherNip}` : "NIP. -",
+      rawNip: teacherNip,
+      role,
+    };
+  }, [
+    teacherCustomName,
+    selectedKelas,
+    selectedClassInfo,
+    filteredSubmissions,
+    teacherRoleTitle,
+    teacherNip,
+  ]);
 
   // Kelompokkan data submisi & foto berdasarkan Rombel / Kelas
   const rombelGroups = useMemo<RombelGroup[]>(() => {
@@ -574,8 +741,9 @@ export function ReportGenerator({
           selectedKelas !== "all"
             ? selectedKelas.replace(/[^a-zA-Z0-9_-]/g, "_")
             : "Semua_Rombel";
+        const safeMadrasah = activeHeadmaster.code.replace(/\s+/g, "");
         const safeDate = reportData.rawDate || selectedDate;
-        const filename = `Laporan_SIMATA_${safeCategory}_${safeKelas}_${safeDate}_F4_Landscape.pdf`;
+        const filename = `Laporan_SIMATA_${safeCategory}_${safeKelas}_${safeMadrasah}_${safeDate}_F4_Landscape.pdf`;
 
         pdf.save(filename);
 
@@ -623,7 +791,7 @@ export function ReportGenerator({
           <div className="h-14 w-14 rounded-full border-2 border-emerald-800 flex flex-col items-center justify-center p-1 bg-emerald-50 text-center">
             <School className="h-6 w-6 text-emerald-800" />
             <span className="text-[7px] font-black uppercase tracking-tighter text-emerald-950 mt-0.5">
-              MI BH DAWUHAN
+              {activeHeadmaster.code} DAWUHAN
             </span>
           </div>
         </div>
@@ -637,10 +805,10 @@ export function ReportGenerator({
             Kantor Kementerian Agama Kabupaten Banyumas
           </h2>
           <h1 className="text-[16px] font-black uppercase tracking-wide text-black m-0 leading-tight mt-0.5 font-serif">
-            MADRASAH IBTIDAIYAH BUSTANUL HUDA DAWUHAN
+            {activeHeadmaster.fullName.toUpperCase()}
           </h1>
           <p className="text-[9.5px] text-slate-700 m-0 mt-0.5 leading-snug">
-            NSM: 111233020084 • NPSN: 60710777 • Terakreditasi "A" (Unggul)
+            NSM: {activeHeadmaster.nsm} • NPSN: {activeHeadmaster.npsn} • Terakreditasi "A" (Unggul)
           </p>
           <p className="text-[9px] text-slate-600 m-0 leading-tight">
             Alamat: Dawuhan, Kec. Banyumas, Kab. Banyumas - Jawa Tengah 53192 • SIMATA Digital System
@@ -664,7 +832,9 @@ export function ReportGenerator({
   const renderRunningHeader = (pageTitle: string) => (
     <div className="border-b border-slate-300 pb-1 mb-2 flex items-center justify-between text-[9px] text-slate-600 font-serif">
       <div className="flex items-center gap-1.5 truncate">
-        <strong className="text-black uppercase font-bold">MI BUSTANUL HUDA DAWUHAN</strong>
+        <strong className="text-black uppercase font-bold">
+          {activeHeadmaster.fullName.toUpperCase()}
+        </strong>
         <span>•</span>
         <span className="truncate">
           Laporan: {currentCategoryName}
@@ -679,51 +849,42 @@ export function ReportGenerator({
     </div>
   );
 
-  // Lembar Pengesahan Tanda Tangan
+  // Lembar Pengesahan Tanda Tangan: Kiri Kepala Madrasah, Kanan Guru yang Mengisi
   const renderSignatures = () => {
-    const isPerClass = selectedKelas !== "all";
-    const rightTitle = isPerClass
-      ? `Wali Kelas ${selectedKelas}`
-      : "Koordinator Program SIMATA";
-    const rightName = isPerClass
-      ? waliKelasName || selectedClassInfo?.submitterName || "Wali Kelas"
-      : coordinatorName;
-    const rightNip = isPerClass
-      ? waliKelasNip && waliKelasNip !== "-"
-        ? `NIP. ${waliKelasNip}`
-        : "NIP. -"
-      : `NIP. ${coordinatorNip}`;
-
     return (
       <div className="mt-4 pt-2 text-xs font-serif avoid-break">
         <div className="flex justify-between items-start px-8">
+          {/* Sisi Kiri: Kepala Madrasah (MI 01 atau MI 02 sesuai pilihan) */}
           <div className="w-72 text-center">
             <p className="m-0 leading-tight">Mengetahui,</p>
-            <p className="font-bold m-0 leading-tight">Kepala Madrasah</p>
+            <p className="font-bold m-0 leading-tight">
+              Kepala {activeHeadmaster.fullName}
+            </p>
             <div className="h-14 flex items-end justify-center">
               {/* Ruang TTD & Stempel */}
             </div>
             <p className="font-bold underline uppercase m-0 leading-tight text-[11.5px]">
-              {headmasterName}
+              {activeHeadmaster.name}
             </p>
             <p className="text-[10px] font-mono m-0 mt-0.5 text-slate-700">
-              NIP. {headmasterNip}
+              NIP. {activeHeadmaster.nip}
             </p>
           </div>
 
+          {/* Sisi Kanan: Guru yang Mengisi */}
           <div className="w-72 text-center">
             <p className="m-0 leading-tight">
               Banyumas, {reportData?.dateFormatted || "19 Oktober 2026"}
             </p>
-            <p className="font-bold m-0 leading-tight">{rightTitle}</p>
+            <p className="font-bold m-0 leading-tight">{activeTeacher.role}</p>
             <div className="h-14 flex items-end justify-center">
               {/* Ruang TTD */}
             </div>
             <p className="font-bold underline uppercase m-0 leading-tight text-[11.5px]">
-              {rightName}
+              {activeTeacher.name}
             </p>
             <p className="text-[10px] font-mono m-0 mt-0.5 text-slate-700">
-              {rightNip}
+              {activeTeacher.nip}
             </p>
           </div>
         </div>
@@ -735,7 +896,7 @@ export function ReportGenerator({
   const renderRunningFooter = (pageNum: number, total: number) => (
     <div className="border-t border-slate-300 pt-1 mt-auto text-[8.5px] text-slate-500 flex justify-between items-center font-serif">
       <span>
-        SIMATA MI Bustanul Huda Dawuhan •{" "}
+        SIMATA {activeHeadmaster.code} Dawuhan •{" "}
         {selectedKelas !== "all"
           ? `Dokumen Laporan ${selectedKelas}`
           : "Rekapitulasi Dokumen Resmi"}{" "}
@@ -1311,68 +1472,252 @@ export function ReportGenerator({
               </label>
             </div>
 
-            {/* Input Pejabat Penandatangan */}
+            {/* Input Pejabat Penandatangan: Kepala MI 01, Kepala MI 02, dan Guru yang Mengisi */}
             {includeSignatures && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200/60 dark:border-slate-800">
-                <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold text-muted-foreground">
-                    Nama & NIP Kepala Madrasah:
-                  </Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      value={headmasterName}
-                      onChange={(e) => setHeadmasterName(e.target.value)}
-                      placeholder="Nama Kepala Madrasah"
-                      className="h-8 text-xs rounded-lg"
-                    />
-                    <Input
-                      value={headmasterNip}
-                      onChange={(e) => setHeadmasterNip(e.target.value)}
-                      placeholder="NIP Kepala Madrasah"
-                      className="h-8 text-xs rounded-lg font-mono"
-                    />
+              <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800 space-y-3">
+                {/* Header & Mode Switcher Kepala Madrasah */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <PenLine className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <div>
+                      <p className="text-xs font-bold text-slate-900 dark:text-white m-0">
+                        Pengaturan Tanda Tangan: Kepala Madrasah (MI 01 & MI 02) & Guru Pengisi
+                      </p>
+                      <p className="text-[11px] text-muted-foreground m-0">
+                        Nama dan NIP otomatis tersimpan di peramban (browser) untuk pencetakan berikutnya.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Switcher Kepala Madrasah yang dicantumkan */}
+                  <div className="flex items-center gap-1.5 self-start sm:self-auto bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 px-2 uppercase tracking-tight">
+                      TTD Kepala:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setHeadmasterChoice("auto")}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        headmasterChoice === "auto"
+                          ? "bg-emerald-600 text-white shadow-sm"
+                          : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
+                      }`}
+                      title={`Otomatis mendeteksi berdasarkan rombel atau filter (Saat ini: ${detectedMadrasahCode})`}
+                    >
+                      Otomatis ({detectedMadrasahCode})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHeadmasterChoice("MI01")}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        headmasterChoice === "MI01"
+                          ? "bg-emerald-600 text-white shadow-sm"
+                          : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
+                      }`}
+                    >
+                      MI 01
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHeadmasterChoice("MI02")}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        headmasterChoice === "MI02"
+                          ? "bg-emerald-600 text-white shadow-sm"
+                          : "text-slate-600 dark:text-slate-300 hover:text-slate-900"
+                      }`}
+                    >
+                      MI 02
+                    </button>
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold text-muted-foreground">
-                    {selectedKelas !== "all"
-                      ? `Nama & NIP Wali Kelas (${selectedKelas}):`
-                      : "Nama & NIP Koordinator Program:"}
-                  </Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      value={
-                        selectedKelas !== "all"
-                          ? waliKelasName || selectedClassInfo?.submitterName || ""
-                          : coordinatorName
-                      }
-                      onChange={(e) =>
-                        selectedKelas !== "all"
-                          ? setWaliKelasName(e.target.value)
-                          : setCoordinatorName(e.target.value)
-                      }
-                      placeholder={
-                        selectedKelas !== "all"
-                          ? "Nama Wali Kelas"
-                          : "Nama Koordinator Program"
-                      }
-                      className="h-8 text-xs rounded-lg font-semibold"
-                    />
-                    <Input
-                      value={
-                        selectedKelas !== "all"
-                          ? waliKelasNip
-                          : coordinatorNip
-                      }
-                      onChange={(e) =>
-                        selectedKelas !== "all"
-                          ? setWaliKelasNip(e.target.value)
-                          : setCoordinatorNip(e.target.value)
-                      }
-                      placeholder="NIP"
-                      className="h-8 text-xs rounded-lg font-mono"
-                    />
+                {/* 3 Kolom Pengaturan: MI 01, MI 02, dan Guru Pengisi */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Kartu 1: Kepala Madrasah MI 01 */}
+                  <div
+                    className={`p-3 rounded-xl border transition-all ${
+                      activeMadrasahCode === "MI01"
+                        ? "bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 ring-2 ring-emerald-500/20"
+                        : "bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5">
+                        <Building2 className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400" />
+                        <span className="text-xs font-extrabold text-slate-900 dark:text-white">
+                          Kepala MI 01 Dawuhan
+                        </span>
+                      </div>
+                      {activeMadrasahCode === "MI01" ? (
+                        <span className="text-[10px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <CheckCircle2 className="h-2.5 w-2.5" /> Aktif
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setHeadmasterChoice("MI01")}
+                          className="text-[10px] text-slate-500 hover:text-emerald-700 font-bold underline cursor-pointer"
+                        >
+                          Gunakan
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <div>
+                        <Label className="text-[10.5px] text-slate-600 dark:text-slate-400 font-medium">
+                          Nama & Gelar:
+                        </Label>
+                        <Input
+                          value={headmaster01Name}
+                          onChange={(e) =>
+                            handleUpdateHeadmaster01(e.target.value, headmaster01Nip)
+                          }
+                          placeholder="Nama Kepala MI 01"
+                          className="h-8 text-xs rounded-lg mt-0.5"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-[10.5px] text-slate-600 dark:text-slate-400 font-medium">
+                          NIP:
+                        </Label>
+                        <Input
+                          value={headmaster01Nip}
+                          onChange={(e) =>
+                            handleUpdateHeadmaster01(headmaster01Name, e.target.value)
+                          }
+                          placeholder="NIP Kepala MI 01"
+                          className="h-8 text-xs rounded-lg font-mono mt-0.5"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Kartu 2: Kepala Madrasah MI 02 */}
+                  <div
+                    className={`p-3 rounded-xl border transition-all ${
+                      activeMadrasahCode === "MI02"
+                        ? "bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 ring-2 ring-emerald-500/20"
+                        : "bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5">
+                        <Building2 className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400" />
+                        <span className="text-xs font-extrabold text-slate-900 dark:text-white">
+                          Kepala MI 02 Dawuhan
+                        </span>
+                      </div>
+                      {activeMadrasahCode === "MI02" ? (
+                        <span className="text-[10px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <CheckCircle2 className="h-2.5 w-2.5" /> Aktif
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setHeadmasterChoice("MI02")}
+                          className="text-[10px] text-slate-500 hover:text-emerald-700 font-bold underline cursor-pointer"
+                        >
+                          Gunakan
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <div>
+                        <Label className="text-[10.5px] text-slate-600 dark:text-slate-400 font-medium">
+                          Nama & Gelar:
+                        </Label>
+                        <Input
+                          value={headmaster02Name}
+                          onChange={(e) =>
+                            handleUpdateHeadmaster02(e.target.value, headmaster02Nip)
+                          }
+                          placeholder="Nama Kepala MI 02"
+                          className="h-8 text-xs rounded-lg mt-0.5"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-[10.5px] text-slate-600 dark:text-slate-400 font-medium">
+                          NIP:
+                        </Label>
+                        <Input
+                          value={headmaster02Nip}
+                          onChange={(e) =>
+                            handleUpdateHeadmaster02(headmaster02Name, e.target.value)
+                          }
+                          placeholder="NIP Kepala MI 02"
+                          className="h-8 text-xs rounded-lg font-mono mt-0.5"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Kartu 3: Guru yang Mengisi */}
+                  <div className="p-3 rounded-xl border bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5">
+                        <User className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400" />
+                        <span className="text-xs font-extrabold text-slate-900 dark:text-white">
+                          Guru yang Mengisi
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-emerald-800 dark:text-emerald-300 font-semibold bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full">
+                        Sisi Kanan
+                      </span>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-[10.5px] text-slate-600 dark:text-slate-400 font-medium">
+                          Nama Guru:
+                        </Label>
+                        {selectedClassInfo?.submitterName &&
+                          teacherCustomName !== selectedClassInfo.submitterName && (
+                            <button
+                              type="button"
+                              onClick={() => setTeacherCustomName(selectedClassInfo.submitterName)}
+                              className="text-[9.5px] text-emerald-700 hover:underline cursor-pointer"
+                              title="Kembalikan ke nama guru dari data pengisian"
+                            >
+                              Reset ke Submisi
+                            </button>
+                          )}
+                      </div>
+                      <Input
+                        value={teacherCustomName}
+                        onChange={(e) => setTeacherCustomName(e.target.value)}
+                        placeholder={
+                          selectedClassInfo?.submitterName || "Nama Guru yang Mengisi"
+                        }
+                        className="h-8 text-xs rounded-lg mt-0.5 font-semibold"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-[10.5px] text-slate-600 dark:text-slate-400 font-medium">
+                          Label Jabatan:
+                        </Label>
+                        <Input
+                          value={teacherRoleTitle}
+                          onChange={(e) => handleUpdateTeacherRole(e.target.value)}
+                          placeholder="Guru yang Mengisi"
+                          className="h-8 text-xs rounded-lg mt-0.5"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-[10.5px] text-slate-600 dark:text-slate-400 font-medium">
+                          NIP:
+                        </Label>
+                        <Input
+                          value={teacherNip}
+                          onChange={(e) => handleUpdateTeacherNip(e.target.value)}
+                          placeholder="NIP Guru (-)"
+                          className="h-8 text-xs rounded-lg font-mono mt-0.5"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2289,8 +2634,8 @@ export function ReportGenerator({
                 <div className="max-w-2xl mx-auto my-6 p-4 rounded-xl border border-slate-300 bg-slate-50/70 text-xs text-slate-700 leading-relaxed text-justify">
                   <p>
                     {selectedKelas !== "all"
-                      ? `Demikian Laporan Dokumentasi Kegiatan Pembiasaan Siswa untuk ${selectedKelas} ini disusun secara sistematis dan rapi melalui Sistem Informasi Madrasah Digital (SIMATA) MI Bustanul Huda Dawuhan berdasarkan laporan harian wali kelas, dokumentasi foto, dan berkas video kegiatan yang tersimpan pada cloud Google Drive madrasah. Laporan ini sah dan dapat dipergunakan sebagaimana mestinya untuk keperluan portofolio kelas, evaluasi internal madrasah, maupun pelaporan kedinasan Kementerian Agama.`
-                      : `Demikian Laporan Rekapitulasi Dokumentasi Kegiatan Pembiasaan Siswa ini disusun secara sistematis dan rapi melalui Sistem Informasi Madrasah Digital (SIMATA) MI Bustanul Huda Dawuhan berdasarkan laporan harian wali kelas per rombel, dokumentasi foto, dan berkas video kegiatan yang tersimpan pada cloud Google Drive madrasah. Laporan ini sah dan dapat dipergunakan sebagaimana mestinya untuk keperluan evaluasi internal madrasah maupun pelaporan kedinasan Kementerian Agama.`}
+                      ? `Demikian Laporan Dokumentasi Kegiatan Pembiasaan Siswa untuk ${selectedKelas} ini disusun secara sistematis dan rapi melalui Sistem Informasi Madrasah Digital (SIMATA) ${activeHeadmaster.fullName} berdasarkan laporan harian guru yang mengisi, dokumentasi foto, dan berkas video kegiatan yang tersimpan pada cloud Google Drive madrasah. Laporan ini sah dan dapat dipergunakan sebagaimana mestinya untuk keperluan portofolio kelas, evaluasi internal madrasah, maupun pelaporan kedinasan Kementerian Agama.`
+                      : `Demikian Laporan Rekapitulasi Dokumentasi Kegiatan Pembiasaan Siswa ini disusun secara sistematis dan rapi melalui Sistem Informasi Madrasah Digital (SIMATA) ${activeHeadmaster.fullName} berdasarkan laporan harian guru yang mengisi per rombel, dokumentasi foto, dan berkas video kegiatan yang tersimpan pada cloud Google Drive madrasah. Laporan ini sah dan dapat dipergunakan sebagaimana mestinya untuk keperluan evaluasi internal madrasah maupun pelaporan kedinasan Kementerian Agama.`}
                   </p>
                 </div>
 
